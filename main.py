@@ -3,8 +3,6 @@ import uuid
 import io
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
-from starlette.datastructures import FormData
-from starlette.multiparts import MultiPartParser
 import httpx
 
 app = FastAPI()
@@ -19,6 +17,7 @@ async def transparent_proxy(request: Request):
     mode = params.get("mode")
     method = request.method
     
+    # Wir lesen den Body einmal komplett
     body = await request.body()
     
     # 1. NZB-Backup Logik
@@ -26,26 +25,34 @@ async def transparent_proxy(request: Request):
         try:
             content_type = request.headers.get("content-type", "")
             if "multipart/form-data" in content_type:
-                # Wir parsen den Body manuell mit dem Starlette Parser
-                boundary = content_type.split("boundary=")[-1].encode()
-                parser = MultiPartParser(io.BytesIO(body), boundary)
+                # Wir nutzen FastAPI's internes Form-Parsing, indem wir 
+                # einen neuen Request mit dem bereits gelesenen Body simulieren
+                from starlette.middleware import Middleware
+                from starlette.requests import Request as StarletteRequest
                 
-                # Wir extrahieren die Form-Daten
-                form = await parser.parse()
+                # Hilfs-Request erstellen, um die Form-Daten sauber zu parsen
+                scope = request.scope.copy()
+                receive = io.BytesIO(body)
                 
-                # Wir suchen nach der Datei (nzbfile oder name)
+                async def mock_receive():
+                    return {"type": "http.request", "body": body, "more_body": False}
+                
+                temp_request = StarletteRequest(scope, receive=mock_receive)
+                form = await temp_request.form()
+                
                 for field_name, file_item in form.items():
+                    # Prüfen ob es ein Datei-Upload ist
                     if hasattr(file_item, "filename") and file_item.filename:
                         clean_name = file_item.filename
-                        file_content = file_item.read()
+                        file_content = await file_item.read()
                         
                         dest_path = os.path.join(BLACKHOLE_DIR, clean_name)
                         with open(dest_path, "wb") as f:
                             f.write(file_content)
                         print(f"[Backup] Datei erfolgreich extrahiert: {clean_name}")
-                        break # Erste gefundene Datei reicht
+                        break
             else:
-                # Fallback für andere POST-Typen
+                # Fallback für Non-Multipart
                 unique_name = f"{uuid.uuid4().hex[:6]}.nzb"
                 with open(os.path.join(BLACKHOLE_DIR, unique_name), "wb") as f:
                     f.write(body)
