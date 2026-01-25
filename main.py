@@ -1,7 +1,10 @@
 import os
 import uuid
+import io
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
+from starlette.datastructures import FormData
+from starlette.multiparts import MultiPartParser
 import httpx
 
 app = FastAPI()
@@ -18,43 +21,38 @@ async def transparent_proxy(request: Request):
     
     body = await request.body()
     
-    # 1. Intelligentes NZB-Backup
+    # 1. NZB-Backup Logik
     if mode == "addfile" and method == "POST":
         try:
-            # Wir nutzen FastAPI's Form-Parser nur für das Backup im Hintergrund
-            from fastapi.parsers import MultiPartParser
-            
-            # Wir simulieren einen Parser, um an die echte Datei zu kommen
-            headers_dict = {k.lower(): v for k, v in request.headers.items()}
-            content_type = headers_dict.get("content-type", "")
-            
+            content_type = request.headers.get("content-type", "")
             if "multipart/form-data" in content_type:
-                # Wir parsen den Body manuell für das Backup
-                parser = MultiPartParser(request.headers, bytes_io := __import__("io").BytesIO(body))
+                # Wir parsen den Body manuell mit dem Starlette Parser
+                boundary = content_type.split("boundary=")[-1].encode()
+                parser = MultiPartParser(io.BytesIO(body), boundary)
+                
+                # Wir extrahieren die Form-Daten
                 form = await parser.parse()
                 
-                # Wir suchen nach dem Feld 'nzbfile' oder 'name'
-                file_item = form.get("nzbfile") or form.get("name")
-                
-                if hasattr(file_item, "filename"):
-                    clean_name = file_item.filename
-                    # Falls kein Name da ist, generieren wir einen
-                    if not clean_name:
-                        clean_name = f"{uuid.uuid4().hex[:6]}.nzb"
-                    
-                    # Speichern der sauberen Daten
-                    dest_path = os.path.join(BLACKHOLE_DIR, clean_name)
-                    with open(dest_path, "wb") as f:
-                        f.write(file_item.file.read())
-                    print(f"[Backup] Saubere NZB gespeichert: {clean_name}")
+                # Wir suchen nach der Datei (nzbfile oder name)
+                for field_name, file_item in form.items():
+                    if hasattr(file_item, "filename") and file_item.filename:
+                        clean_name = file_item.filename
+                        file_content = file_item.read()
+                        
+                        dest_path = os.path.join(BLACKHOLE_DIR, clean_name)
+                        with open(dest_path, "wb") as f:
+                            f.write(file_content)
+                        print(f"[Backup] Datei erfolgreich extrahiert: {clean_name}")
+                        break # Erste gefundene Datei reicht
             else:
-                # Fallback: Falls es kein Multipart ist, speichern wir den Body (selten)
-                with open(os.path.join(BLACKHOLE_DIR, f"{uuid.uuid4().hex[:6]}.nzb"), "wb") as f:
+                # Fallback für andere POST-Typen
+                unique_name = f"{uuid.uuid4().hex[:6]}.nzb"
+                with open(os.path.join(BLACKHOLE_DIR, unique_name), "wb") as f:
                     f.write(body)
         except Exception as e:
-            print(f"[Backup Fehler] Konnte NZB nicht sauber extrahieren: {e}")
+            print(f"[Backup Fehler] Extraktion fehlgeschlagen: {e}")
 
-    # 2. Transparente Weiterleitung (Unverändert, damit Altmount funktioniert)
+    # 2. Transparente Weiterleitung (Unverändert)
     async with httpx.AsyncClient(timeout=60.0) as client:
         headers = {k: v for k, v in request.headers.items() 
                    if k.lower() not in ["host", "content-length", "connection"]}
