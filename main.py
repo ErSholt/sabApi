@@ -19,36 +19,43 @@ async def transparent_proxy(request: Request):
     method = request.method
 
     async with httpx.AsyncClient(timeout=60.0) as client:
+        # Header filtern, aber Content-Type bei POST/Multipart NICHT mitschicken, 
+        # da httpx diesen inklusive Boundary selbst generieren muss.
         headers = {k: v for k, v in request.headers.items() 
                    if k.lower() not in ["host", "content-length", "connection", "content-type"]}
 
-        if method == "POST" and "multipart/form-data" in request.headers.get("Content-Type", ""):
+        if method == "POST" and "multipart/form-data" in request.headers.get("Content-Type", "").lower():
             form = await request.form()
-            payload = {}
-            files = []
+            data = {}
+            files = {}
 
             for key, value in form.items():
                 if isinstance(value, UploadFile):
                     content = await value.read()
+                    
+                    # Backup im Blackhole
                     if mode == "addfile":
                         unique_name = f"{uuid.uuid4().hex[:6]}_{value.filename}"
                         with open(os.path.join(BLACKHOLE_DIR, unique_name), "wb") as f:
                             f.write(content)
                         print(f"[Backup] Gespeichert: {unique_name}")
-                    files.append((key, (value.filename, content, value.content_type)))
+                    
+                    # Hier ist die Änderung: Wir nutzen ein Dictionary für files
+                    # httpx mappt dies dann korrekt auf den Feldnamen (key)
+                    files[key] = (value.filename, content, value.content_type)
                 else:
-                    payload[key] = value
+                    data[key] = value
 
-            resp = await client.post(BACKEND_URL, params=params, data=payload, files=files, headers=headers)
+            # Multipart-POST
+            resp = await client.post(BACKEND_URL, params=params, data=data, files=files, headers=headers)
         else:
+            # Alles andere (GET, JSON POST etc.)
             body = await request.body()
             resp = await client.request(method=method, url=BACKEND_URL, params=params, content=body, headers=headers)
 
-        # DEBUG LOG: Was sagt Altmount?
-        print(f"[Proxy] {mode} -> Backend Status: {resp.status_code}")
-        print(f"[Proxy] Backend Response Body: {resp.text}")
+        print(f"[Proxy] {mode} -> Status: {resp.status_code}")
+        print(f"[Proxy] Body: {resp.text}")
 
-        # Wir geben die Antwort explizit als JSON zurück, falls es eines ist
         return Response(
             content=resp.content,
             status_code=resp.status_code,
