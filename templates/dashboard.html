@@ -12,23 +12,29 @@
         .progress-blue { background-color: #3b82f6; transition: width 0.5s ease-in-out; }
         .badge-usenet { background-color: #7e22ce; color: #f3e8ff; }
         .badge-completed { background-color: #064e3b; color: #34d399; }
-        /* Scrollbar Styling */
+        
+        /* Custom Toggle Switch Styles */
+        .toggle-bg { width: 2.5rem; height: 1.25rem; background-color: #1f1f1f; border-radius: 9999px; transition: background-color 0.2s; position: relative; border: 1px solid #333; }
+        .toggle-dot { width: 0.85rem; height: 0.85rem; background-color: #9ca3af; border-radius: 9999px; position: absolute; top: 0.125rem; left: 0.125rem; transition: transform 0.2s, background-color 0.2s; }
+        input:checked + .toggle-bg { background-color: #3b82f6; border-color: #2563eb; }
+        input:checked + .toggle-bg .toggle-dot { transform: translateX(1.25rem); background-color: white; }
+
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #000; }
         ::-webkit-scrollbar-thumb { background: #1f1f1f; border-radius: 4px; }
     </style>
 </head>
 <body class="p-4 md:p-8">
+
     <div class="max-w-7xl mx-auto flex justify-between items-center mb-10">
         <div>
             <h1 class="text-2xl font-bold tracking-tight text-white">NZB <span class="text-blue-500">Proxy</span></h1>
             <div class="flex gap-4 mt-2 text-[11px] font-medium text-gray-500 uppercase tracking-wider">
-                <span>Total History: <span class="text-blue-400" id="total-usenet">...</span></span>
-                <span id="refresh-indicator" class="text-green-500 opacity-0 transition-opacity">● Syncing</span>
+                <span>Einträge: <span class="text-blue-400" id="total-usenet">...</span></span>
+                <span id="refresh-indicator" class="text-green-500 opacity-0 transition-opacity">● Live Sync</span>
             </div>
         </div>
         <div class="flex items-center gap-4">
-            <span class="text-[10px] text-gray-600 font-mono hidden md:block">Backend: altmount:8080</span>
             <a href="/logout" class="text-xs bg-gray-900 hover:bg-gray-800 border border-gray-800 px-4 py-2 rounded-lg transition text-gray-300">Logout</a>
         </div>
     </div>
@@ -37,81 +43,93 @@
         
         <div class="card rounded-xl overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-800 flex justify-between items-center bg-white/[0.01]">
-                <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-widest">Aktivitäten & Usenet Downloads</h2>
+                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Torbox Aktivitäten</h2>
                 <div class="flex gap-2 text-[10px]">
-                    <span class="bg-blue-900/20 px-2 py-1 rounded text-blue-400 border border-blue-800/30">Torbox API</span>
+                    <span class="bg-blue-900/20 px-2 py-1 rounded text-blue-400 border border-blue-800/30 font-bold">API ACTIVE</span>
                 </div>
             </div>
             
             <div id="table-container">
-                <div class="p-20 text-center text-gray-600 animate-pulse text-sm">Verbinde mit Torbox API...</div>
+                <div class="p-20 text-center text-gray-600 animate-pulse text-sm font-medium tracking-tight">Initialisiere Usenet-Daten...</div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-6">
-            <div class="card rounded-xl overflow-hidden">
-                <div class="px-6 py-3 border-b border-gray-800 bg-white/[0.01]">
-                    <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-widest text-[11px]">Letzte Proxy-Weiterleitungen (SABnzbd)</h2>
-                </div>
-                <div id="history-container" class="p-2">
-                    <div class="p-10 text-center text-gray-600 text-xs">Warte auf Daten...</div>
-                </div>
+        <div class="card rounded-xl overflow-hidden">
+            <div class="px-6 py-3 border-b border-gray-800 bg-white/[0.01] flex justify-between items-center">
+                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest text-[11px]">Proxy-Weiterleitungen (SABnzbd)</h2>
+                
+                <label class="inline-flex items-center cursor-pointer group">
+                    <span class="mr-3 text-[10px] font-bold text-gray-500 uppercase tracking-tighter group-hover:text-gray-300 transition-colors">Nur NZB-Files</span>
+                    <div class="relative">
+                        <input type="checkbox" id="filter-toggle" class="sr-only" checked onchange="updateDashboard(true)">
+                        <div class="toggle-bg">
+                            <div class="toggle-dot"></div>
+                        </div>
+                    </div>
+                </label>
+            </div>
+            <div id="history-container">
+                <div class="p-10 text-center text-gray-600 text-xs font-medium">Lade Proxy-Logs...</div>
             </div>
         </div>
     </div>
 
     <script>
-let currentPageT = 1;
-let currentPageH = 1;
-let isRefreshing = false;
-let refreshTimer;
+        let currentPageT = 1;
+        let currentPageH = 1;
+        let isRefreshing = false;
 
-// Funktion für den sofortigen Wechsel
-window.changePage = function(newPage) {
-    if (currentPageT === newPage) return;
-    currentPageT = newPage;
-    updateDashboard(true); // "true" erzwingt das Update sofort
-};
+        // Globale Navigation (wird sofort getriggert)
+        window.changePage = function(newPage) {
+            if (currentPageT === newPage) return;
+            currentPageT = newPage;
+            updateDashboard(true);
+        };
 
-window.changePageH = function(newPage) {
-    if (currentPageH === newPage) return;
-    currentPageH = newPage;
-    updateDashboard(true);
-};
+        window.changePageH = function(newPage) {
+            if (currentPageH === newPage) return;
+            currentPageH = newPage;
+            updateDashboard(true);
+        };
 
-async function updateDashboard(force = false) {
-    // Wenn gerade ein Update läuft und es nicht erzwungen ist, abbrechen
-    if (isRefreshing && !force) return;
-    
-    isRefreshing = true;
-    const indicator = document.getElementById('refresh-indicator');
-    if (indicator) indicator.style.opacity = '1';
+        async function updateDashboard(force = false) {
+            if (isRefreshing && !force) return;
+            isRefreshing = true;
 
-    try {
-        const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&_t=${Date.now()}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.status === "success") {
-            document.getElementById('table-container').innerHTML = data.table_html;
-            document.getElementById('history-container').innerHTML = data.history_html;
-            document.getElementById('total-usenet').innerText = data.total_history;
+            const indicator = document.getElementById('refresh-indicator');
+            if (indicator) indicator.style.opacity = '1';
+
+            // Filter-Status aus der Checkbox lesen
+            const filterActive = document.getElementById('filter-toggle').checked ? 1 : 0;
+
+            try {
+                const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterActive}&_t=${Date.now()}`;
+                const response = await fetch(url);
+                
+                if (response.status === 401) {
+                    window.location.href = "/login";
+                    return;
+                }
+
+                const data = await response.json();
+                
+                if (data.status === "success") {
+                    document.getElementById('table-container').innerHTML = data.table_html;
+                    document.getElementById('history-container').innerHTML = data.history_html;
+                    document.getElementById('total-usenet').innerText = data.total_history;
+                }
+            } catch (error) {
+                console.error("Sync Error:", error);
+            } finally {
+                isRefreshing = false;
+                if (indicator) setTimeout(() => { indicator.style.opacity = '0'; }, 800);
+            }
         }
-    } catch (error) {
-        console.error("Update error:", error);
-    } finally {
-        isRefreshing = false;
-        if (indicator) setTimeout(() => { indicator.style.opacity = '0'; }, 800);
-    }
-}
 
-// Intervall sauber starten und bei manuellem Klick nicht stören
-function startAutoRefresh() {
-    refreshTimer = setInterval(() => updateDashboard(false), 5000);
-}
-
-startAutoRefresh();
-updateDashboard(true);
+        // Auto-Refresh alle 5 Sekunden
+        setInterval(() => updateDashboard(false), 5000);
+        // Initialer Load (sofort)
+        updateDashboard(true);
     </script>
 </body>
 </html>

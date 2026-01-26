@@ -1,15 +1,44 @@
-<h3 class="text-gray-500 mb-3 font-semibold uppercase tracking-widest text-[11px]">Recent Proxy Activity</h3>
-<div class="space-y-2">
-    {% for log in request_log %}
-    <div class="flex justify-between items-center border-b border-gray-800/50 pb-2 text-[11px]">
-        <span class="text-gray-400">{{ log.time }}</span>
-        <span class="text-gray-200 truncate px-4 flex-grow">{{ log.info }}</span>
-        <span class="{{ 'text-green-500' if log.status == 200 else 'text-red-500' }} font-mono">{{ log.status }}</span>
+<div class="overflow-x-auto">
+    <div class="divide-y divide-gray-800/50">
+        {% for log in request_log %}
+        <div class="flex justify-between items-center px-6 py-3 hover:bg-white/[0.01] transition group">
+            <div class="flex flex-col">
+                <span class="text-gray-200 text-sm font-medium truncate max-w-2xl group-hover:text-blue-400 transition-colors">
+                    {{ log.info }}
+                </span>
+                <div class="flex gap-3 mt-1">
+                    <span class="text-[10px] text-gray-500 font-mono uppercase tracking-tighter">{{ log.time }}</span>
+                    <span class="text-[10px] text-gray-600 font-bold uppercase tracking-widest">{{ log.mode }}</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-[10px] font-bold font-mono {% if log.status == 200 %}text-green-500 border-green-900/30{% else %}text-red-500 border-red-900/30{% endif %} bg-black px-2 py-1 rounded border shadow-sm">
+                    {{ log.status }}
+                </span>
+            </div>
+        </div>
+        {% else %}
+        <div class="p-16 text-center">
+            <div class="text-gray-600 text-xs font-medium italic">Keine Proxy-Aktivitäten in diesem Filtermodus gefunden.</div>
+        </div>
+        {% endfor %}
     </div>
-    {% endfor %}
 </div>
-<div class="flex justify-between mt-4">
-    <button onclick="changePageH({{ page_h - 1 }})" class="text-gray-500 hover:text-white {% if page_h <= 1 %}opacity-0 pointer-events-none{% endif %}">←</button>
-    <span class="text-gray-600 text-[10px]">Seite {{ page_h }} / {{ total_h_pages }}</span>
-    <button onclick="changePageH({{ page_h + 1 }})" class="text-gray-500 hover:text-white {% if page_h >= total_h_pages %}opacity-0 pointer-events-none{% endif %}">→</button>
+
+<div class="px-6 py-3 bg-black/50 border-t border-gray-800 flex justify-between items-center">
+    <div class="text-[10px] text-gray-500 font-medium">Log-Seite {{ page_h }} von {{ total_h_pages }}</div>
+    <div class="flex gap-1">
+        <button onclick="changePageH(1)" title="Erste Seite" class="p-2 card rounded-lg hover:bg-gray-800 transition {% if page_h <= 1 %}opacity-20 pointer-events-none{% endif %}">
+            <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="3" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+        </button>
+        <button onclick="changePageH({{ page_h - 1 }})" class="p-2 card rounded-lg hover:bg-gray-800 transition {% if page_h <= 1 %}opacity-20 pointer-events-none{% endif %}">
+            <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="3" d="M15 19l-7-7 7-7"></path></svg>
+        </button>
+        <button onclick="changePageH({{ page_h + 1 }})" class="p-2 card rounded-lg hover:bg-gray-800 transition {% if page_h >= total_h_pages %}opacity-20 pointer-events-none{% endif %}">
+            <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="3" d="M9 5l7 7-7 7"></path></svg>
+        </button>
+        <button onclick="changePageH({{ total_h_pages }})" title="Letzte Seite" class="p-2 card rounded-lg hover:bg-gray-800 transition {% if page_h >= total_h_pages %}opacity-20 pointer-events-none{% endif %}">
+            <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="3" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>
+        </button>
+    </div>
 </div>

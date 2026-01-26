@@ -1,20 +1,17 @@
 import os
-import uuid
-import io
-import datetime
 import sqlite3
-import secrets
+import datetime
 import math
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
-from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResponse # JSONResponse hinzugefügt
+import httpx
+import secrets
+from fastapi import FastAPI, Request, Form, status
+from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request as StarletteRequest
-import httpx
 
 app = FastAPI()
 
 # --- KONFIGURATION ---
-# Backend auf deinen SABnzbd Container/Pfad angepasst
 BACKEND_URL = os.getenv("BACKEND_URL", "http://altmount:8080/sabnzbd/api")
 BLACKHOLE_DIR = os.getenv("BLACKHOLE_DIR", "/blackhole")
 DATABASE_DIR = os.getenv("DATABASE_DIR", "/config")
@@ -22,8 +19,8 @@ TORBOX_API_KEY = os.getenv("TORBOX_API_KEY", "")
 PROXY_USER = os.getenv("PROXY_USER", "admin")
 PROXY_PASS = os.getenv("PROXY_PASS", "password")
 
-# Ein fester Token für die Session (Sollte in Produktion via ENV kommen)
-SESSION_TOKEN = os.getenv("SESSION_TOKEN", "a1b2c3d4e5f6g7h8") 
+# Fester Session-Token, damit man nach Container-Updates nicht ausgeloggt wird
+SESSION_TOKEN = os.getenv("SESSION_TOKEN", "a1b2c3d4e5f6g7h8")
 ITEMS_PER_PAGE = 10
 
 os.makedirs(BLACKHOLE_DIR, exist_ok=True)
@@ -47,43 +44,28 @@ def log_to_db(mode, info, status_code):
                          (timestamp, mode, info, status_code))
     except: pass
 
-# --- AUTH LOGIK ---
+# --- AUTH ---
 def is_authenticated(request: Request):
     return request.cookies.get("session_id") == SESSION_TOKEN
 
-# --- ROUTES ---
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
-
-@app.post("/login")
-async def login(username: str = Form(...), password: str = Form(...)):
-    if username == PROXY_USER and password == PROXY_PASS:
-        response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-        response.set_cookie(key="session_id", value=SESSION_TOKEN, httponly=True, samesite="lax")
-        return response
-    return HTMLResponse("Falsche Daten. <a href='/login'>Zurück</a>", status_code=401)
-
-@app.get("/logout")
-async def logout():
-    response = RedirectResponse(url="/login")
-    response.delete_cookie("session_id")
-    return response
-
+# --- DASHBOARD ROUTE ---
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_only: int = 0):
+async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_only: int = 0, filter_active: int = 1):
     if not is_authenticated(request):
         if content_only:
             return JSONResponse({"status": "unauthorized", "redirect": "/login"})
         return RedirectResponse(url="/login")
     
     try:
-        # 1. Proxy History
+        # 1. Dynamische History Logik (Frontend Filter)
         offset_h = (page_h - 1) * ITEMS_PER_PAGE
+        # Bedingung: Wenn filter_active=1, blende "Request" und Status-Anfragen aus
+        condition = "WHERE info != 'Request' AND mode NOT IN ('queue', 'status', 'history')" if int(filter_active) == 1 else ""
+        
         with sqlite3.connect(DB_PATH) as conn:
-            total_h = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+            total_h = conn.execute(f"SELECT COUNT(*) FROM history {condition}").fetchone()[0]
             total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
-            cur = conn.execute("SELECT time, mode, info, status FROM history ORDER BY id DESC LIMIT ? OFFSET ?", 
+            cur = conn.execute(f"SELECT time, mode, info, status FROM history {condition} ORDER BY id DESC LIMIT ? OFFSET ?", 
                                (ITEMS_PER_PAGE, offset_h))
             history_data = [{"time": r[0], "mode": r[1], "info": r[2], "status": r[3]} for r in cur.fetchall()]
 
@@ -94,7 +76,7 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                 async with httpx.AsyncClient() as client:
                     resp = await client.get("https://api.torbox.app/v1/api/usenet/mylist", 
                                             headers={"Authorization": f"Bearer {TORBOX_API_KEY}"},
-                                            timeout=8.0)
+                                            timeout=5.0)
                     if resp.status_code == 200:
                         all_data = resp.json().get("data", [])
                         total_t_pages = max(1, math.ceil(len(all_data) / ITEMS_PER_PAGE))
@@ -102,22 +84,16 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                         torbox_list = [{"name": i.get("name"), "progress": round(i.get("progress", 0)*100, 1), "state": i.get("download_state")} 
                                        for i in all_data[start:start+ITEMS_PER_PAGE]]
             except:
-                torbox_error = "Torbox Timeout"
+                torbox_error = "Torbox API Timeout"
 
-        # --- DER FIX FÜR DEN FEHLER ---
+        # AJAX REFRESH WEICHE
         if int(content_only) == 1:
             table_html = templates.get_template("table_snippet.html").render({
-                "torbox_downloads": torbox_list, 
-                "page_t": page_t, 
-                "total_t_pages": total_t_pages,
-                "torbox_error": torbox_error
+                "torbox_downloads": torbox_list, "page_t": page_t, "total_t_pages": total_t_pages, "torbox_error": torbox_error
             })
-            # NEU: Auch das History-Snippet rendern
             history_html = templates.get_template("history_snippet.html").render({
-                "request_log": history_data,
-                "page_h": page_h, "total_h_pages": total_h_pages
+                "request_log": history_data, "page_h": page_h, "total_h_pages": total_h_pages
             })
-            # Wir geben explizit JSONResponse zurück, um den .encode Fehler zu vermeiden
             return JSONResponse({
                 "status": "success", 
                 "table_html": table_html, 
@@ -125,7 +101,7 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                 "total_history": total_h
             })
 
-        # Normaler HTML-Aufruf
+        # Normaler Seitenaufruf
         return templates.TemplateResponse("dashboard.html", {
             "request": request, "request_log": history_data, 
             "page_h": page_h, "total_h_pages": total_h_pages,
@@ -134,10 +110,27 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
         })
 
     except Exception as e:
-        print(f"Fehler: {e}")
-        if content_only:
-            return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
-        return HTMLResponse(content=f"Fehler: {e}", status_code=500)
+        if content_only: return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+        return HTMLResponse(content=f"Server Fehler: {e}", status_code=500)
+
+# --- LOGIN / LOGOUT ---
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/login")
+async def login(username: str = Form(...), password: str = Form(...)):
+    if username == PROXY_USER and password == PROXY_PASS:
+        response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie(key="session_id", value=SESSION_TOKEN, httponly=True)
+        return response
+    return HTMLResponse("Login fehlgeschlagen. <a href='/login'>Zurück</a>", status_code=401)
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login")
+    response.delete_cookie("session_id")
+    return response
 
 # --- TRANSPARENT PROXY ---
 @app.api_route("/api", methods=["GET", "POST"])
@@ -163,6 +156,7 @@ async def transparent_proxy(request: Request):
         headers = {k: v for k, v in request.headers.items() if k.lower() not in ["host", "content-length", "connection"]}
         try:
             resp = await client.request(method=request.method, url=BACKEND_URL, params=params, content=body, headers=headers)
+            # Loggen in DB (wird im Dashboard gefiltert wenn gewünscht)
             if mode not in ["queue", "history"]: log_to_db(mode, log_info, resp.status_code)
             return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
         except Exception as e: return Response(content=str(e), status_code=500)
