@@ -6,7 +6,7 @@ import sqlite3
 import secrets
 import math
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
-from fastapi.responses import Response, HTMLResponse, RedirectResponse
+from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResponse # JSONResponse hinzugefügt
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request as StarletteRequest
 import httpx
@@ -74,11 +74,11 @@ async def logout():
 async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_only: int = 0):
     if not is_authenticated(request):
         if content_only:
-            return {"status": "unauthorized", "redirect": "/login"}
+            return JSONResponse({"status": "unauthorized", "redirect": "/login"})
         return RedirectResponse(url="/login")
     
     try:
-        # 1. Proxy History (Lokale DB)
+        # 1. Proxy History
         offset_h = (page_h - 1) * ITEMS_PER_PAGE
         with sqlite3.connect(DB_PATH) as conn:
             total_h = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
@@ -87,12 +87,11 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                                (ITEMS_PER_PAGE, offset_h))
             history_data = [{"time": r[0], "mode": r[1], "info": r[2], "status": r[3]} for r in cur.fetchall()]
 
-        # 2. Torbox API (Jetzt mit /api/usenet/ Endpunkt)
+        # 2. Torbox Usenet API
         torbox_list, total_t_pages, torbox_error = [], 1, None
         if TORBOX_API_KEY:
             try:
                 async with httpx.AsyncClient() as client:
-                    # Umgestellt von torrents auf usenet
                     resp = await client.get("https://api.torbox.app/v1/api/usenet/mylist", 
                                             headers={"Authorization": f"Bearer {TORBOX_API_KEY}"},
                                             timeout=8.0)
@@ -102,12 +101,10 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                         start = (page_t - 1) * ITEMS_PER_PAGE
                         torbox_list = [{"name": i.get("name"), "progress": round(i.get("progress", 0)*100, 1), "state": i.get("download_state")} 
                                        for i in all_data[start:start+ITEMS_PER_PAGE]]
-                    else:
-                        torbox_error = f"API Status: {resp.status_code}"
-            except Exception as e:
-                torbox_error = "Torbox API Timeout"
+            except:
+                torbox_error = "Torbox Timeout"
 
-        # AJAX WEICHE
+        # --- DER FIX FÜR DEN FEHLER ---
         if int(content_only) == 1:
             table_html = templates.get_template("table_snippet.html").render({
                 "torbox_downloads": torbox_list, 
@@ -115,8 +112,14 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                 "total_t_pages": total_t_pages,
                 "torbox_error": torbox_error
             })
-            return {"status": "success", "table_html": table_html, "total_history": total_h}
+            # Wir geben explizit JSONResponse zurück, um den .encode Fehler zu vermeiden
+            return JSONResponse({
+                "status": "success", 
+                "table_html": table_html, 
+                "total_history": total_h
+            })
 
+        # Normaler HTML-Aufruf
         return templates.TemplateResponse("dashboard.html", {
             "request": request, "request_log": history_data, 
             "page_h": page_h, "total_h_pages": total_h_pages,
@@ -125,8 +128,10 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
         })
 
     except Exception as e:
-        if content_only: return {"status": "error", "message": str(e)}
-        return HTMLResponse(content=f"Kritischer Fehler: {e}", status_code=500)
+        print(f"Fehler: {e}")
+        if content_only:
+            return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+        return HTMLResponse(content=f"Fehler: {e}", status_code=500)
 
 # --- TRANSPARENT PROXY ---
 @app.api_route("/api", methods=["GET", "POST"])
