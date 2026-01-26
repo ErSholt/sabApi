@@ -85,19 +85,32 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                         torbox_list.append({"name": item.get("name"), "progress": round(item.get("progress", 0)*100, 1), "state": item.get("download_state")})
         except: torbox_error = "Fehler"
 
-    # NEU: Wenn nur Daten angefordert werden (AJAX)
+# NEU: Wenn nur Daten angefordert werden (AJAX/Fetch)
     if content_only:
+        # Wir rendern nur das kleine Tabellen-Stück
         table_html = templates.get_template("table_snippet.html").render({
             "torbox_downloads": torbox_list, 
             "page_t": page_t, 
             "total_t_pages": total_t_pages,
             "torbox_error": torbox_error
         })
-        return {"table_html": table_html, "total_history": total_h}
+        # Das hier MUSS ein Dictionary sein, damit FastAPI JSON daraus macht
+        return {
+            "table_html": table_html, 
+            "total_history": total_h,
+            "status": "success"
+        }
 
+    # Normaler Seitenaufruf (beim ersten Laden)
     return templates.TemplateResponse("dashboard.html", {
-        "request": request, "request_log": history_data, "page_h": page_h, "total_h_pages": total_h_pages,
-        "page_t": page_t, "total_t_pages": total_t_pages, "torbox_downloads": torbox_list, "torbox_error": torbox_error
+        "request": request, 
+        "request_log": history_data, 
+        "page_h": page_h, 
+        "total_h_pages": total_h_pages,
+        "page_t": page_t, 
+        "total_t_pages": total_t_pages, 
+        "torbox_downloads": torbox_list, 
+        "torbox_error": torbox_error
     })
 
 # --- PROXY API (UNVERÄNDERT FÜR RADARR) ---
