@@ -1,0 +1,48 @@
+<div class="overflow-x-auto">
+    <table class="w-full text-left text-sm">
+        <thead>
+            <tr class="text-gray-500 border-b border-gray-800 text-[11px] uppercase tracking-wider">
+                <th class="px-6 py-4 font-medium">Name</th>
+                <th class="px-6 py-4 font-medium">Status</th>
+                <th class="px-6 py-4 font-medium">Type</th>
+                <th class="px-6 py-4 font-medium w-64">Progress</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-800">
+            {% for dl in torbox_downloads %}
+            <tr class="hover:bg-white/[0.02] transition">
+                <td class="px-6 py-4">
+                    <div class="font-medium text-gray-200 truncate max-w-md">{{ dl.name }}</div>
+                </td>
+                <td class="px-6 py-4">
+                    <span class="badge-completed text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">
+                        {{ dl.state }}
+                    </span>
+                </td>
+                <td class="px-6 py-4">
+                    <span class="badge-usenet text-[10px] px-2 py-0.5 rounded-md font-bold uppercase">Usenet</span>
+                </td>
+                <td class="px-6 py-4">
+                    <div class="flex items-center gap-3">
+                        <div class="flex-grow bg-gray-800 rounded-full h-2">
+                            <div class="progress-blue h-2 rounded-full" style="width: {{ dl.progress }}%"></div>
+                        </div>
+                        <span class="text-[10px] text-gray-500 w-8">{{ dl.progress }}%</span>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div class="px-6 py-4 bg-black/50 border-t border-gray-800 flex justify-between items-center">
+    <div class="text-[11px] text-gray-500">Seite {{ page_t }} von {{ total_t_pages }}</div>
+    <div class="flex gap-2">
+        <button onclick="changePage({{ page_t - 1 }})" class="p-2 card rounded-lg hover:bg-gray-800 {% if page_t <= 1 %}opacity-30 pointer-events-none{% endif %}">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"></path></svg>
+        </button>
+        <button onclick="changePage({{ page_t + 1 }})" class="p-2 card rounded-lg hover:bg-gray-800 {% if page_t >= total_t_pages %}opacity-30 pointer-events-none{% endif %}">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg>
+        </button>
+    </div>
+</div>
