@@ -36,42 +36,45 @@
 
     <script>
 let currentPageT = 1;
+let isRefreshing = false;
 
 async function updateDashboard(pageT = currentPageT) {
+    if (isRefreshing) return; // Verhindert überlappende Requests
+    isRefreshing = true;
+    
     currentPageT = pageT;
     const indicator = document.getElementById('refresh-indicator');
-    indicator.style.opacity = '1';
+    if (indicator) indicator.style.opacity = '1';
 
     try {
-        // Wir erzwingen, dass der Browser keine Cache-Antwort von Cloudflare nutzt
-        const response = await fetch(`/?content_only=1&page_t=${pageT}&_t=${Date.now()}`);
+        // Cache-Busting mit Date.now()
+        const response = await fetch(`/?content_only=1&page_t=${pageT}&_ts=${Date.now()}`);
         
-        const contentType = response.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-            // Wenn wir kein JSON bekommen, sind wir wahrscheinlich ausgeloggt
-            window.location.reload(); 
-            return;
-        }
+        if (!response.ok) throw new Error("Server Error");
 
         const data = await response.json();
         
         if (data.status === "unauthorized") {
-            window.location.href = data.redirect;
+            console.warn("Session expired, redirecting...");
+            window.location.href = "/login";
             return;
         }
 
-        if (data.table_html) {
+        if (data.status === "success" && data.table_html) {
             document.getElementById('table-container').innerHTML = data.table_html;
             document.getElementById('total-usenet').innerText = data.total_history;
         }
     } catch (error) {
-        console.error("Dashboard Sync Error:", error);
+        console.error("Update failed:", error);
     } finally {
-        setTimeout(() => { indicator.style.opacity = '0'; }, 1000);
+        isRefreshing = false;
+        if (indicator) setTimeout(() => { indicator.style.opacity = '0'; }, 1000);
     }
 }
 
-setInterval(() => updateDashboard(), 5000);
+// Intervall auf 10 Sekunden hochsetzen zum Testen
+setInterval(() => updateDashboard(), 10000);
+// Initialer Aufruf
 updateDashboard();
     </script>
 </body>
