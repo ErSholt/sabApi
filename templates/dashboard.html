@@ -2,116 +2,59 @@
 <html lang="de" class="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NZB Proxy Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { gray: { 900: '#1a1b26', 800: '#24283b', 700: '#414868' } } } } }
-    </script>
     <style>body { background-color: #1a1b26; color: #c0caf5; }</style>
 </head>
-<body class="p-6 max-w-6xl mx-auto">
-    
+<body class="p-6 max-w-6xl mx-auto font-sans">
     <div class="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
-        <div>
-            <h1 class="text-3xl font-bold text-white">NZB Proxy <span class="text-blue-400">Dashboard</span></h1>
-            <p class="text-gray-400 text-sm mt-1">Verbindungsstatus: <span class="text-green-400">Online</span></p>
-        </div>
-        <div class="text-right">
-            <a href="/logout" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm font-bold transition">Logout</a>
-        </div>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-            <h3 class="text-gray-400 text-xs font-bold uppercase tracking-wider">Proxy Requests (Gesamt)</h3>
-            <p class="text-4xl font-bold text-white mt-2">{{ total_requests }}</p>
-        </div>
-        <div class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-            <h3 class="text-gray-400 text-xs font-bold uppercase tracking-wider">Erfolgreiche NZBs</h3>
-            <p class="text-4xl font-bold text-green-400 mt-2">{{ total_nzbs }}</p>
-        </div>
-        <div class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-            <h3 class="text-gray-400 text-xs font-bold uppercase tracking-wider">Torbox Downloads</h3>
-            <p class="text-4xl font-bold text-blue-400 mt-2">{{ torbox_active_count }}</p>
-        </div>
+        <h1 class="text-3xl font-bold text-white">NZB Proxy <span class="text-blue-400">Dashboard</span></h1>
+        <a href="/logout" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm">Logout</a>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        <div class="bg-gray-800 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
-            <div class="bg-gray-700 px-6 py-3 border-b border-gray-600 flex justify-between items-center">
-                <h2 class="font-bold text-white">Letzte Proxy Aktivitäten</h2>
-                <span class="text-xs bg-blue-600 text-white px-2 py-1 rounded">Lokal</span>
-            </div>
-            <div class="p-0 overflow-x-auto">
+        <div class="bg-gray-800 rounded-lg shadow-lg border border-gray-700 flex flex-col">
+            <div class="bg-gray-700 px-6 py-3 font-bold text-white">Proxy History</div>
+            <div class="flex-grow">
                 <table class="w-full text-left text-sm">
-                    <thead>
-                        <tr class="bg-gray-800 text-gray-400 border-b border-gray-700">
-                            <th class="px-6 py-3">Zeit</th>
-                            <th class="px-6 py-3">Modus</th>
-                            <th class="px-6 py-3">Datei / Info</th>
-                            <th class="px-6 py-3">Status</th>
-                        </tr>
-                    </thead>
                     <tbody class="divide-y divide-gray-700">
                         {% for log in request_log %}
-                        <tr class="hover:bg-gray-700 transition">
-                            <td class="px-6 py-3 text-gray-400">{{ log.time }}</td>
-                            <td class="px-6 py-3"><span class="px-2 py-1 rounded text-xs font-bold {% if log.mode == 'addfile' %}bg-green-900 text-green-300{% else %}bg-gray-600 text-gray-300{% endif %}">{{ log.mode }}</span></td>
-                            <td class="px-6 py-3 text-white truncate max-w-xs">{{ log.info }}</td>
-                            <td class="px-6 py-3">
-                                {% if log.status == 200 %}
-                                    <span class="text-green-400">● 200 OK</span>
-                                {% else %}
-                                    <span class="text-red-400">● {{ log.status }}</span>
-                                {% endif %}
+                        <tr class="hover:bg-gray-700">
+                            <td class="px-6 py-3 text-gray-400 text-xs">{{ log.time }}</td>
+                            <td class="px-6 py-3 text-white truncate max-w-[200px]">{{ log.info }}</td>
+                            <td class="px-6 py-3 text-right">
+                                <span class="text-{{ 'green' if log.status == 200 else 'red' }}-400">{{ log.status }}</span>
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-        </div>
-
-        <div class="bg-gray-800 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
-            <div class="bg-gray-700 px-6 py-3 border-b border-gray-600 flex justify-between items-center">
-                <h2 class="font-bold text-white">Torbox Cloud Downloads</h2>
-                <span class="text-xs bg-purple-600 text-white px-2 py-1 rounded">API</span>
-            </div>
-            <div class="p-6">
-                {% if torbox_error %}
-                    <div class="bg-red-900 text-red-200 p-3 rounded mb-4 text-sm">{{ torbox_error }}</div>
-                {% endif %}
-
-                {% if torbox_downloads %}
-                    <ul class="space-y-4">
-                    {% for dl in torbox_downloads %}
-                        <li class="bg-gray-900 p-4 rounded border border-gray-700">
-                            <div class="flex justify-between items-start mb-2">
-                                <span class="text-white font-medium truncate w-3/4" title="{{ dl.name }}">{{ dl.name }}</span>
-                                <span class="text-xs font-bold px-2 py-1 rounded {% if dl.download_finished %}bg-green-600{% else %}bg-yellow-600{% endif %}">
-                                    {{ dl.state }}
-                                </span>
-                            </div>
-                            <div class="w-full bg-gray-700 rounded-full h-2.5 mb-1">
-                                <div class="bg-blue-500 h-2.5 rounded-full" style="width: {{ dl.progress }}%"></div>
-                            </div>
-                            <div class="flex justify-between text-xs text-gray-400">
-                                <span>{{ dl.progress }}%</span>
-                                <span>{{ dl.speed }}</span>
-                            </div>
-                        </li>
-                    {% endfor %}
-                    </ul>
-                {% else %}
-                    <div class="text-center text-gray-500 py-8">
-                        <p>Keine aktiven Downloads bei Torbox.</p>
-                    </div>
-                {% endif %}
+            <div class="p-4 bg-gray-900 flex justify-between items-center text-xs">
+                <a href="/?page_h={{ page_h - 1 }}&page_t={{ page_t }}" class="px-3 py-1 bg-gray-700 rounded {% if page_h <= 1 %}opacity-50 pointer-events-none{% endif %}">Zurück</a>
+                <span>Seite {{ page_h }} von {{ total_h_pages }}</span>
+                <a href="/?page_h={{ page_h + 1 }}&page_t={{ page_t }}" class="px-3 py-1 bg-gray-700 rounded {% if page_h >= total_h_pages %}opacity-50 pointer-events-none{% endif %}">Weiter</a>
             </div>
         </div>
 
+        <div class="bg-gray-800 rounded-lg shadow-lg border border-gray-700 flex flex-col">
+            <div class="bg-gray-700 px-6 py-3 font-bold text-white">Torbox Downloads</div>
+            <div class="p-4 flex-grow space-y-3">
+                {% if torbox_error %}<p class="text-red-400 text-sm">{{ torbox_error }}</p>{% endif %}
+                {% for dl in torbox_downloads %}
+                <div class="bg-gray-900 p-3 rounded border border-gray-700">
+                    <div class="flex justify-between text-xs mb-1"><span class="truncate w-40 text-white">{{ dl.name }}</span><span class="text-blue-400">{{ dl.state }}</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-1.5"><div class="bg-blue-500 h-1.5 rounded-full" style="width: {{ dl.progress }}%"></div></div>
+                    <div class="flex justify-between text-[10px] text-gray-500 mt-1"><span>{{ dl.progress }}%</span><span>{{ dl.speed }}</span></div>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="p-4 bg-gray-900 flex justify-between items-center text-xs">
+                <a href="/?page_h={{ page_h }}&page_t={{ page_t - 1 }}" class="px-3 py-1 bg-gray-700 rounded {% if page_t <= 1 %}opacity-50 pointer-events-none{% endif %}">Zurück</a>
+                <span>Seite {{ page_t }} von {{ total_t_pages }}</span>
+                <a href="/?page_h={{ page_h }}&page_t={{ page_t + 1 }}" class="px-3 py-1 bg-gray-700 rounded {% if page_t >= total_t_pages %}opacity-50 pointer-events-none{% endif %}">Weiter</a>
+            </div>
+        </div>
     </div>
 </body>
 </html>
