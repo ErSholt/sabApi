@@ -61,62 +61,57 @@
     </div>
 
     <script>
-        let currentPageT = 1;
-        let currentPageH = 1;
-        let isRefreshing = false;
+let currentPageT = 1;
+let currentPageH = 1;
+let isRefreshing = false;
+let refreshTimer;
 
-        // Globale Funktionen für die Buttons in den Snippets
-        window.changePage = function(newPage) {
-            currentPageT = newPage;
-            updateDashboard();
-        };
+// Funktion für den sofortigen Wechsel
+window.changePage = function(newPage) {
+    if (currentPageT === newPage) return;
+    currentPageT = newPage;
+    updateDashboard(true); // "true" erzwingt das Update sofort
+};
 
-        window.changePageH = function(newPage) {
-            currentPageH = newPage;
-            updateDashboard();
-        };
+window.changePageH = function(newPage) {
+    if (currentPageH === newPage) return;
+    currentPageH = newPage;
+    updateDashboard(true);
+};
 
-        async function updateDashboard() {
-            if (isRefreshing) return;
-            isRefreshing = true;
+async function updateDashboard(force = false) {
+    // Wenn gerade ein Update läuft und es nicht erzwungen ist, abbrechen
+    if (isRefreshing && !force) return;
+    
+    isRefreshing = true;
+    const indicator = document.getElementById('refresh-indicator');
+    if (indicator) indicator.style.opacity = '1';
 
-            const indicator = document.getElementById('refresh-indicator');
-            if (indicator) indicator.style.opacity = '1';
-
-            try {
-                // Fetcht beide Informationen in einem Request
-                const response = await fetch(`/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&_t=${Date.now()}`);
-                
-                if (response.status === 401) {
-                    window.location.href = "/login";
-                    return;
-                }
-
-                const data = await response.json();
-                
-                if (data.status === "unauthorized") {
-                    window.location.href = data.redirect;
-                    return;
-                }
-
-                if (data.status === "success") {
-                    // Befülle die zwei Container mit den HTML-Snippets vom Server
-                    document.getElementById('table-container').innerHTML = data.table_html;
-                    document.getElementById('history-container').innerHTML = data.history_html;
-                    document.getElementById('total-usenet').innerText = data.total_history;
-                }
-            } catch (error) {
-                console.error("Sync Error:", error);
-            } finally {
-                isRefreshing = false;
-                if (indicator) setTimeout(() => { indicator.style.opacity = '0'; }, 1000);
-            }
+    try {
+        const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&_t=${Date.now()}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.status === "success") {
+            document.getElementById('table-container').innerHTML = data.table_html;
+            document.getElementById('history-container').innerHTML = data.history_html;
+            document.getElementById('total-usenet').innerText = data.total_history;
         }
+    } catch (error) {
+        console.error("Update error:", error);
+    } finally {
+        isRefreshing = false;
+        if (indicator) setTimeout(() => { indicator.style.opacity = '0'; }, 800);
+    }
+}
 
-        // Auto-Refresh alle 5 Sekunden
-        setInterval(updateDashboard, 5000);
-        // Sofort beim Laden einmal ausführen
-        updateDashboard();
+// Intervall sauber starten und bei manuellem Klick nicht stören
+function startAutoRefresh() {
+    refreshTimer = setInterval(() => updateDashboard(false), 5000);
+}
+
+startAutoRefresh();
+updateDashboard(true);
     </script>
 </body>
 </html>
