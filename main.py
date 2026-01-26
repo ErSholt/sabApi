@@ -82,7 +82,7 @@ async def dashboard(request: Request, username: str = Depends(get_current_userna
     if TORBOX_API_KEY:
         try:
             async with httpx.AsyncClient() as client:
-                tb_resp = await client.get("https://api.torbox.app/v1/api/torrents/mylist", 
+                tb_resp = await client.get("https://api.torbox.app/v1/api/usenet/mylist", 
                                            headers={"Authorization": f"Bearer {TORBOX_API_KEY}"})
                 if tb_resp.status_code == 200:
                     data = tb_resp.json().get("data", [])
