@@ -2,14 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Erst die Requirements kopieren und installieren (für schnelleres Bauen)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
+# JETZT WICHTIG: Alles kopieren (inklusive des templates Ordners)
+COPY . .
 
-# Blackhole Ordner erstellen
-RUN mkdir /blackhole
+# Falls du sichergehen willst, dass der Ordner da ist:
+RUN ls -R /app/templates
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main.py:app", "--host", "0.0.0.0", "--port", "8000"]
