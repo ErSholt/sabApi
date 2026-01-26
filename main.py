@@ -112,10 +112,16 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                 "total_t_pages": total_t_pages,
                 "torbox_error": torbox_error
             })
+            # NEU: Auch das History-Snippet rendern
+            history_html = templates.get_template("history_snippet.html").render({
+                "request_log": history_data,
+                "page_h": page_h, "total_h_pages": total_h_pages
+            })
             # Wir geben explizit JSONResponse zurück, um den .encode Fehler zu vermeiden
             return JSONResponse({
                 "status": "success", 
                 "table_html": table_html, 
+                "history_html": history_html,
                 "total_history": total_h
             })
 

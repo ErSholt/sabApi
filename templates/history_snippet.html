@@ -1,0 +1,15 @@
+<h3 class="text-gray-500 mb-3 font-semibold uppercase tracking-widest text-[11px]">Recent Proxy Activity</h3>
+<div class="space-y-2">
+    {% for log in request_log %}
+    <div class="flex justify-between items-center border-b border-gray-800/50 pb-2 text-[11px]">
+        <span class="text-gray-400">{{ log.time }}</span>
+        <span class="text-gray-200 truncate px-4 flex-grow">{{ log.info }}</span>
+        <span class="{{ 'text-green-500' if log.status == 200 else 'text-red-500' }} font-mono">{{ log.status }}</span>
+    </div>
+    {% endfor %}
+</div>
+<div class="flex justify-between mt-4">
+    <button onclick="changePageH({{ page_h - 1 }})" class="text-gray-500 hover:text-white {% if page_h <= 1 %}opacity-0 pointer-events-none{% endif %}">←</button>
+    <span class="text-gray-600 text-[10px]">Seite {{ page_h }} / {{ total_h_pages }}</span>
+    <button onclick="changePageH({{ page_h + 1 }})" class="text-gray-500 hover:text-white {% if page_h >= total_h_pages %}opacity-0 pointer-events-none{% endif %}">→</button>
+</div>
