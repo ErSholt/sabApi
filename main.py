@@ -58,41 +58,68 @@ async def logout():
     response.delete_cookie("session_id")
     return response
 
+# --- DASHBOARD (KORRIGIERTE VERSION) ---
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_only: int = 0):
     if not is_authenticated(request):
         if content_only:
-            # Falls die Session abgelaufen ist, schicke einen Fehler-Status statt HTML
             return {"status": "unauthorized", "redirect": "/login"}
         return RedirectResponse(url="/login")
     
-    # ... (Deine History & Torbox Logik hier) ...
-    # (Stelle sicher, dass history_data und torbox_list hier berechnet werden)
+    try:
+        # 1. History Logik mit Fehlerprüfung
+        offset_h = (page_h - 1) * ITEMS_PER_PAGE
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.execute("SELECT COUNT(*) FROM history")
+            total_h = cur.fetchone()[0]
+            # Zeile 91 (ca.): Sicherstellen, dass wir nicht durch 0 teilen
+            total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
+            
+            cur = conn.execute("SELECT time, mode, info, status FROM history ORDER BY id DESC LIMIT ? OFFSET ?", 
+                               (ITEMS_PER_PAGE, offset_h))
+            history_data = [{"time": r[0], "mode": r[1], "info": r[2], "status": r[3]} for r in cur.fetchall()]
 
-    if content_only == 1:
-        try:
+        # 2. Torbox Logik
+        torbox_list, total_t_pages, torbox_error = [], 1, None
+        if TORBOX_API_KEY:
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get("https://api.torbox.app/v1/api/torrents/mylist", 
+                                            headers={"Authorization": f"Bearer {TORBOX_API_KEY}"},
+                                            timeout=5.0)
+                    if resp.status_code == 200:
+                        all_data = resp.json().get("data", [])
+                        total_t_pages = max(1, math.ceil(len(all_data) / ITEMS_PER_PAGE))
+                        start = (page_t - 1) * ITEMS_PER_PAGE
+                        torbox_list = [{"name": i.get("name"), "progress": round(i.get("progress", 0)*100, 1), "state": i.get("download_state")} 
+                                       for i in all_data[start:start+ITEMS_PER_PAGE]]
+            except Exception as e:
+                torbox_error = "Torbox API nicht erreichbar"
+
+        # AJAX WEICHE
+        if content_only == 1:
             table_html = templates.get_template("table_snippet.html").render({
                 "torbox_downloads": torbox_list, 
                 "page_t": page_t, 
                 "total_t_pages": total_t_pages,
                 "torbox_error": torbox_error
             })
-            # WICHTIG: Das muss ein Dictionary sein für JSON-Output
-            return {
-                "status": "success",
-                "table_html": table_html, 
-                "total_history": total_h
-            }
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return {"status": "success", "table_html": table_html, "total_history": total_h}
 
-    # Normaler erster Seitenaufruf
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request, "request_log": history_data, 
-        "page_h": page_h, "total_h_pages": total_h_pages,
-        "page_t": page_t, "total_t_pages": total_t_pages, 
-        "torbox_downloads": torbox_list, "torbox_error": torbox_error
-    })
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request, "request_log": history_data, 
+            "page_h": page_h, "total_h_pages": total_h_pages,
+            "page_t": page_t, "total_t_pages": total_t_pages, 
+            "torbox_downloads": torbox_list, "torbox_error": torbox_error
+        })
+
+    except Exception as e:
+        # Wenn irgendwas schief geht, schicke eine saubere Fehlermeldung statt Crash
+        print(f"Kritischer Fehler in Zeile 91 ff: {e}")
+        if content_only:
+            return {"status": "error", "message": str(e)}
+        return HTMLResponse(content=f"Dshboard Fehler: {e}", status_code=500)
+    
 # --- PROXY API (UNVERÄNDERT FÜR RADARR) ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def transparent_proxy(request: Request):
