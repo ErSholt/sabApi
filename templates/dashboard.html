@@ -35,37 +35,44 @@
     </div>
 
     <script>
-        let currentPageT = 1;
-        let currentPageH = 1;
+let currentPageT = 1;
 
-        async function updateDashboard(pageT = currentPageT) {
-            currentPageT = pageT;
-            const indicator = document.getElementById('refresh-indicator');
-            indicator.style.opacity = '1';
+async function updateDashboard(pageT = currentPageT) {
+    currentPageT = pageT;
+    const indicator = document.getElementById('refresh-indicator');
+    indicator.style.opacity = '1';
 
-            try {
-                const response = await fetch(`/?content_only=1&page_t=${pageT}&page_h=${currentPageH}`);
-                const data = await response.json();
-                
-                // Tabelle aktualisieren
-                document.getElementById('table-container').innerHTML = data.table_html;
-                document.getElementById('total-usenet').innerText = data.total_history;
-                
-                setTimeout(() => { indicator.style.opacity = '0'; }, 1000);
-            } catch (error) {
-                console.error("Update failed", error);
-            }
+    try {
+        // Wir erzwingen, dass der Browser keine Cache-Antwort von Cloudflare nutzt
+        const response = await fetch(`/?content_only=1&page_t=${pageT}&_t=${Date.now()}`);
+        
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            // Wenn wir kein JSON bekommen, sind wir wahrscheinlich ausgeloggt
+            window.location.reload(); 
+            return;
         }
 
-        // Seitenwechsel ohne Neuladen
-        function changePage(newPage) {
-            updateDashboard(newPage);
+        const data = await response.json();
+        
+        if (data.status === "unauthorized") {
+            window.location.href = data.redirect;
+            return;
         }
 
-        // Auto-Refresh alle 5 Sekunden
-        setInterval(() => updateDashboard(), 5000);
-        // Initialer Load
-        updateDashboard();
+        if (data.table_html) {
+            document.getElementById('table-container').innerHTML = data.table_html;
+            document.getElementById('total-usenet').innerText = data.total_history;
+        }
+    } catch (error) {
+        console.error("Dashboard Sync Error:", error);
+    } finally {
+        setTimeout(() => { indicator.style.opacity = '0'; }, 1000);
+    }
+}
+
+setInterval(() => updateDashboard(), 5000);
+updateDashboard();
     </script>
 </body>
 </html>
