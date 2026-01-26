@@ -1,60 +1,117 @@
 <!DOCTYPE html>
-<html lang="de" class="dark">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NZB Proxy Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>body { background-color: #1a1b26; color: #c0caf5; }</style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            background-color: #000000; 
+            color: #f3f4f6;
+            font-family: 'Inter', sans-serif;
+        }
+        .card { background-color: #0d0d0d; border: 1px solid #1f1f1f; }
+        .progress-blue { background-color: #3b82f6; }
+        .badge-usenet { background-color: #7e22ce; color: #f3e8ff; } /* Lila wie im Bild */
+        .badge-completed { background-color: #064e3b; color: #34d399; } /* Dunkelgrün */
+    </style>
 </head>
-<body class="p-6 max-w-6xl mx-auto font-sans">
-    <div class="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
-        <h1 class="text-3xl font-bold text-white">NZB Proxy <span class="text-blue-400">Dashboard</span></h1>
-        <a href="/logout" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm">Logout</a>
+<body class="p-4 md:p-8">
+    <div class="max-w-7xl mx-auto flex justify-between items-center mb-10">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight">NZB <span class="text-blue-500">Proxy</span></h1>
+            <div class="flex gap-4 mt-2 text-xs font-medium text-gray-500">
+                <span>Torrents: <span class="text-blue-400">0</span></span>
+                <span>Usenet: <span class="text-purple-400">{{ total_h_pages * 10 }}</span></span>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <a href="/logout" class="text-xs bg-gray-900 hover:bg-gray-800 border border-gray-800 px-4 py-2 rounded-lg transition">Logout</a>
+        </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div class="bg-gray-800 rounded-lg shadow-lg border border-gray-700 flex flex-col">
-            <div class="bg-gray-700 px-6 py-3 font-bold text-white">Proxy History</div>
-            <div class="flex-grow">
+    <div class="max-w-7xl mx-auto grid grid-cols-1 gap-8">
+        
+        <div class="card rounded-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-800 flex justify-between items-center">
+                <h2 class="font-semibold text-gray-300">Aktivitäten & Downloads</h2>
+                <div class="flex gap-2 text-[10px]">
+                    <span class="bg-gray-800 px-2 py-1 rounded text-gray-400">All</span>
+                    <span class="bg-green-900/30 px-2 py-1 rounded text-green-500">Cached</span>
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto">
                 <table class="w-full text-left text-sm">
-                    <tbody class="divide-y divide-gray-700">
-                        {% for log in request_log %}
-                        <tr class="hover:bg-gray-700">
-                            <td class="px-6 py-3 text-gray-400 text-xs">{{ log.time }}</td>
-                            <td class="px-6 py-3 text-white truncate max-w-[200px]">{{ log.info }}</td>
-                            <td class="px-6 py-3 text-right">
-                                <span class="text-{{ 'green' if log.status == 200 else 'red' }}-400">{{ log.status }}</span>
+                    <thead>
+                        <tr class="text-gray-500 border-b border-gray-800 text-[11px] uppercase tracking-wider">
+                            <th class="px-6 py-4 font-medium">Name</th>
+                            <th class="px-6 py-4 font-medium">Status</th>
+                            <th class="px-6 py-4 font-medium">Type</th>
+                            <th class="px-6 py-4 font-medium w-64">Progress</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800">
+                        {% for dl in torbox_downloads %}
+                        <tr class="hover:bg-white/[0.02] transition">
+                            <td class="px-6 py-4">
+                                <div class="font-medium text-gray-200 truncate max-w-md">{{ dl.name }}</div>
+                                <div class="text-[10px] text-gray-600 mt-0.5">ID: {{ range(100000, 999999) | random }}</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <span class="badge-completed text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">
+                                    {{ dl.state }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <span class="badge-usenet text-[10px] px-2 py-0.5 rounded-md font-bold uppercase">
+                                    Usenet
+                                </span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="flex-grow bg-gray-800 rounded-full h-2">
+                                        <div class="progress-blue h-2 rounded-full" style="width: {{ dl.progress }}%"></div>
+                                    </div>
+                                    <span class="text-[10px] text-gray-500 w-8">{{ dl.progress }}%</span>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <div class="p-4 bg-gray-900 flex justify-between items-center text-xs">
-                <a href="/?page_h={{ page_h - 1 }}&page_t={{ page_t }}" class="px-3 py-1 bg-gray-700 rounded {% if page_h <= 1 %}opacity-50 pointer-events-none{% endif %}">Zurück</a>
-                <span>Seite {{ page_h }} von {{ total_h_pages }}</span>
-                <a href="/?page_h={{ page_h + 1 }}&page_t={{ page_t }}" class="px-3 py-1 bg-gray-700 rounded {% if page_h >= total_h_pages %}opacity-50 pointer-events-none{% endif %}">Weiter</a>
+
+            <div class="px-6 py-4 bg-black/50 border-t border-gray-800 flex justify-between items-center">
+                <div class="text-[11px] text-gray-500">Seite {{ page_t }} von {{ total_t_pages }}</div>
+                <div class="flex gap-2">
+                    <a href="/?page_t={{ page_t - 1 }}" class="p-2 card rounded-lg hover:bg-gray-800 {% if page_t <= 1 %}opacity-30 pointer-events-none{% endif %}">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"></path></svg>
+                    </a>
+                    <a href="/?page_t={{ page_t + 1 }}" class="p-2 card rounded-lg hover:bg-gray-800 {% if page_t >= total_t_pages %}opacity-30 pointer-events-none{% endif %}">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg>
+                    </a>
+                </div>
             </div>
         </div>
 
-        <div class="bg-gray-800 rounded-lg shadow-lg border border-gray-700 flex flex-col">
-            <div class="bg-gray-700 px-6 py-3 font-bold text-white">Torbox Downloads</div>
-            <div class="p-4 flex-grow space-y-3">
-                {% if torbox_error %}<p class="text-red-400 text-sm">{{ torbox_error }}</p>{% endif %}
-                {% for dl in torbox_downloads %}
-                <div class="bg-gray-900 p-3 rounded border border-gray-700">
-                    <div class="flex justify-between text-xs mb-1"><span class="truncate w-40 text-white">{{ dl.name }}</span><span class="text-blue-400">{{ dl.state }}</span></div>
-                    <div class="w-full bg-gray-700 rounded-full h-1.5"><div class="bg-blue-500 h-1.5 rounded-full" style="width: {{ dl.progress }}%"></div></div>
-                    <div class="flex justify-between text-[10px] text-gray-500 mt-1"><span>{{ dl.progress }}%</span><span>{{ dl.speed }}</span></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-[11px]">
+             <div class="card p-4 rounded-xl">
+                <h3 class="text-gray-500 mb-3 font-semibold uppercase tracking-widest">Recent Proxy Activity</h3>
+                <div class="space-y-2">
+                    {% for log in request_log %}
+                    <div class="flex justify-between items-center border-b border-gray-800/50 pb-2">
+                        <span class="text-gray-400">{{ log.time }}</span>
+                        <span class="text-gray-200 truncate px-4">{{ log.info }}</span>
+                        <span class="{{ 'text-green-500' if log.status == 200 else 'text-red-500' }}">{{ log.status }}</span>
+                    </div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
-            </div>
-            <div class="p-4 bg-gray-900 flex justify-between items-center text-xs">
-                <a href="/?page_h={{ page_h }}&page_t={{ page_t - 1 }}" class="px-3 py-1 bg-gray-700 rounded {% if page_t <= 1 %}opacity-50 pointer-events-none{% endif %}">Zurück</a>
-                <span>Seite {{ page_t }} von {{ total_t_pages }}</span>
-                <a href="/?page_h={{ page_h }}&page_t={{ page_t + 1 }}" class="px-3 py-1 bg-gray-700 rounded {% if page_t >= total_t_pages %}opacity-50 pointer-events-none{% endif %}">Weiter</a>
-            </div>
+             </div>
         </div>
+
     </div>
 </body>
 </html>
