@@ -49,105 +49,119 @@ def log_to_db(mode, info, status_code):
 def is_authenticated(request: Request):
     return request.cookies.get("session_id") == SESSION_TOKEN
 
-# --- DASHBOARD ROUTE ---
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_only: int = 0, filter_active: int = 1, search: str = ""):
+async def dashboard(
+    request: Request, 
+    page_h: int = 1, 
+    page_t: int = 1, 
+    content_only: int = 0, 
+    filter_active: int = 1, 
+    search_t: str = "", # Suche für Torbox
+    search_h: str = ""  # Suche für History
+):
     if not is_authenticated(request):
-        if content_only:
-            return JSONResponse({"status": "unauthorized", "redirect": "/login"})
+        if content_only: return JSONResponse({"status": "unauthorized", "redirect": "/login"})
         return RedirectResponse(url="/login")
     
+    # Suchbegriffe säubern
+    search_t_term = search_t.strip().lower()
+    search_h_term = search_h.strip().lower()
+
     try:
-        # --- PROXY HISTORY LOGIK (SABNZBD) ---
+        # --- 1. PROXY HISTORY LOGIK (SQL-Datenbank) ---
         offset_h = (page_h - 1) * ITEMS_PER_PAGE
         conditions = []
-
+        
         if int(filter_active) == 1:
-            conditions.append("info != 'Request' AND mode NOT IN ('queue', 'status', 'history')")
-
-        if search.strip():
-            safe_search = search.replace("'", "''")
+            conditions.append("(info != 'Request' AND mode NOT IN ('queue', 'status', 'history'))")
+        
+        if search_h_term:
+            # Einfaches Escaping für die Suche in der DB
+            safe_search = search_h_term.replace("'", "''")
             conditions.append(f"info LIKE '%{safe_search}%'")
         
-        # WHERE-Klausel zusammenfügen
         where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
-        
+
         with sqlite3.connect(DB_PATH) as conn:
+            # Gesamtanzahl der (gefilterten) Einträge für History-Pagination
             total_h = conn.execute(f"SELECT COUNT(*) FROM history {where_clause}").fetchone()[0]
             total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
-            cur = conn.execute(f"SELECT time, mode, info, status FROM history {where_clause} ORDER BY id DESC LIMIT ? OFFSET ?", 
-                            (ITEMS_PER_PAGE, offset_h))
+            
+            # Daten abrufen
+            query = f"SELECT time, mode, info, status FROM history {where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
+            cur = conn.execute(query, (ITEMS_PER_PAGE, offset_h))
             history_data = [{"time": r[0], "mode": r[1], "info": r[2], "status": r[3]} for r in cur.fetchall()]
 
-       
-        # --- TORBOX USENET API LOGIK (API + Python Filter) ---
-            torbox_list, total_t_pages, torbox_error = [], 1, None
-            if TORBOX_API_KEY:
-                try:
-                    async with httpx.AsyncClient() as client:
-                        resp = await client.get("https://api.torbox.app/v1/api/usenet/mylist", 
-                                                headers={"Authorization": f"Bearer {TORBOX_API_KEY}"}, timeout=5.0)
-                        if resp.status_code == 200:
-                            all_data = resp.json().get("data", [])
-                            
-                            # Such-Filter auf API-Daten anwenden
-                            if search_term:
-                                all_data = [i for i in all_data if search_term in i.get("name", "").lower()]
-                            
-                            total_t_pages = max(1, math.ceil(len(all_data) / ITEMS_PER_PAGE))
-                            start = (page_t - 1) * ITEMS_PER_PAGE
-                            torbox_list = [{"name": i.get("name"), "progress": round(i.get("progress", 0)*100, 1), "state": i.get("download_state")} 
-                                        for i in all_data[start:start+ITEMS_PER_PAGE]]
-                except Exception as e:
-                    torbox_error = f"API Error: {str(e)}"
+        # --- 2. TORBOX USENET API LOGIK (API + Python-Filter) ---
+        torbox_list, total_t_pages, torbox_error = [], 1, None
+        
+        if TORBOX_API_KEY:
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        "https://api.torbox.app/v1/api/usenet/mylist", 
+                        headers={"Authorization": f"Bearer {TORBOX_API_KEY}"}, 
+                        timeout=5.0
+                    )
+                    
+                    if resp.status_code == 200:
+                        all_data = resp.json().get("data", [])
+                        if not isinstance(all_data, list): all_data = []
 
-# --- AJAX REFRESH WEICHE (Inhalt nur für Dashboard-Update) ---
+                        # Separater Filter nur für Torbox-Einträge
+                        if search_t_term:
+                            all_data = [
+                                i for i in all_data 
+                                if i.get("name") and search_t_term in str(i.get("name")).lower()
+                            ]
+                        
+                        total_items_t = len(all_data)
+                        total_t_pages = max(1, math.ceil(total_items_t / ITEMS_PER_PAGE))
+                        
+                        # Pagination für Torbox
+                        start = (page_t - 1) * ITEMS_PER_PAGE
+                        end = start + ITEMS_PER_PAGE
+                        selected_data = all_data[start:end]
+
+                        torbox_list = [
+                            {
+                                "name": i.get("name", "Unbekannt"), 
+                                "progress": round(float(i.get("progress", 0)) * 100, 1), 
+                                "state": i.get("download_state", "unknown")
+                            } 
+                            for i in selected_data
+                        ]
+                    else:
+                        torbox_error = f"Torbox API Fehler: {resp.status_code}"
+            except Exception as e:
+                print(f"Torbox API Error: {e}")
+                torbox_error = "Torbox API nicht erreichbar"
+
+        # --- 3. AJAX REFRESH WEICHE ---
         if int(content_only) == 1:
-            # 1. Torbox Snippet rendern
-            # Wir übergeben alle notwendigen Variablen für die table_snippet.html
-            table_html = templates.get_template("table_snippet.html").render({
-                "torbox_downloads": torbox_list, 
-                "page_t": page_t, 
-                "total_t_pages": total_t_pages,
-                "torbox_error": torbox_error
-            })
-            
-            # 2. History Snippet rendern
-            # Wir übergeben alle notwendigen Variablen für die history_snippet.html
-            history_html = templates.get_template("history_snippet.html").render({
-                "request_log": history_data, 
-                "page_h": page_h, 
-                "total_h_pages": total_h_pages
-            })
-            
-            # 3. JSON Antwort senden
-            # Das JavaScript in der dashboard.html empfängt dieses Paket und tauscht die IDs aus
             return JSONResponse({
                 "status": "success",
-                "table_html": table_html,
-                "history_html": history_html,
-                "total_history": total_h,  # Aktualisiert die Zahl im Header
-                "current_page_t": page_t,
-                "current_page_h": page_h
+                "table_html": templates.get_template("table_snippet.html").render({
+                    "torbox_downloads": torbox_list, "page_t": page_t, 
+                    "total_t_pages": total_t_pages, "torbox_error": torbox_error
+                }),
+                "history_html": templates.get_template("history_snippet.html").render({
+                    "request_log": history_data, "page_h": page_h, "total_h_pages": total_h_pages
+                }),
+                "total_history": total_h
             })
 
-        # --- NORMALER SEITENAUFRUF (Wenn die Seite im Browser neu geladen wird) ---
+        # --- 4. NORMALER SEITENAUFRUF ---
         return templates.TemplateResponse("dashboard.html", {
             "request": request, 
-            "request_log": history_data, 
-            "page_h": page_h, 
-            "total_h_pages": total_h_pages,
-            "page_t": page_t, 
-            "total_t_pages": total_t_pages, 
-            "torbox_downloads": torbox_list,
-            "torbox_error": torbox_error
+            "request_log": history_data, "page_h": page_h, "total_h_pages": total_h_pages,
+            "page_t": page_t, "total_t_pages": total_t_pages, 
+            "torbox_downloads": torbox_list, "torbox_error": torbox_error
         })
 
     except Exception as e:
-        # Globaler Error-Handler für das Dashboard
-        print(f"CRITICAL DASHBOARD ERROR: {e}")
-        if content_only:
-            return JSONResponse({"status": "error", "message": "Interner Serverfehler"}, status_code=500)
+        print(f"Server Error: {e}")
+        if content_only: return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
         return HTMLResponse(content=f"Ein Fehler ist aufgetreten: {e}", status_code=500)
 
 # --- LOGIN / LOGOUT ---

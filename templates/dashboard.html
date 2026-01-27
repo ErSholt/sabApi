@@ -94,13 +94,11 @@
         let isRefreshing = false;
         let searchTimeout;
 
-        // Suche mit Verzögerung, um Server zu schonen
-        function debounceSearch() {
+        function debounceSearch(type) {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(() => {
-                // Wenn gesucht wird, fangen wir in beiden Listen wieder vorne an
-                currentPageH = 1; 
-                currentPageT = 1; 
+                if (type === 't') currentPageT = 1;
+                if (type === 'h') currentPageH = 1;
                 updateDashboard(true);
             }, 400);
         }
@@ -120,17 +118,18 @@
             const historyScroll = historyContainer.querySelector('.overflow-x-auto');
             const historyScrollPos = historyScroll ? historyScroll.scrollLeft : 0;
 
+            // Werte aus beiden Feldern auslesen
+            const searchT = document.getElementById('search-torbox').value;
+            const searchH = document.getElementById('search-history').value;
             const filterActive = document.getElementById('filter-toggle').checked ? 1 : 0;
-            const searchTerm = document.getElementById('search-input').value;
 
             try {
-                const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterActive}&search=${encodeURIComponent(searchTerm)}&_t=${Date.now()}`;
-                const response = await fetch(url);
-                
-                if (response.status === 401) { window.location.href = "/login"; return; }
-                const data = await response.json();
-                
-                if (data.status === "success") {
+                    const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterActive}&search_t=${encodeURIComponent(searchT)}&search_h=${encodeURIComponent(searchH)}&_t=${Date.now()}`;
+        
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    
+                    if (data.status === "success") {
                     document.getElementById('table-container').innerHTML = data.table_html;
                     document.getElementById('history-container').innerHTML = data.history_html;
                     document.getElementById('total-usenet').innerText = data.total_history;
@@ -143,7 +142,6 @@
                 console.error("Sync Error:", error);
             } finally {
                 isRefreshing = false;
-                if (indicator) setTimeout(() => { indicator.style.opacity = '0'; }, 800);
             }
         }
 
