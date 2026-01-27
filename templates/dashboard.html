@@ -9,19 +9,19 @@
     <style>
         body { background-color: #000000; color: #f3f4f6; font-family: 'Inter', sans-serif; }
         .card { background-color: #0d0d0d; border: 1px solid #1f1f1f; }
-        .progress-blue { background-color: #3b82f6; transition: width 0.5s ease-in-out; }
-        .badge-usenet { background-color: #7e22ce; color: #f3e8ff; }
-        .badge-completed { background-color: #064e3b; color: #34d399; }
         
-        /* Custom Toggle Switch Styles */
-        .toggle-bg { width: 2.5rem; height: 1.25rem; background-color: #1f1f1f; border-radius: 9999px; transition: background-color 0.2s; position: relative; border: 1px solid #333; }
-        .toggle-dot { width: 0.85rem; height: 0.85rem; background-color: #9ca3af; border-radius: 9999px; position: absolute; top: 0.125rem; left: 0.125rem; transition: transform 0.2s, background-color 0.2s; }
+        /* Custom Toggle Switch */
+        .toggle-bg { width: 2.5rem; height: 1.25rem; background-color: #1f1f1f; border-radius: 9999px; transition: all 0.2s; position: relative; border: 1px solid #333; }
+        .toggle-dot { width: 0.85rem; height: 0.85rem; background-color: #9ca3af; border-radius: 9999px; position: absolute; top: 0.125rem; left: 0.125rem; transition: all 0.2s; }
         input:checked + .toggle-bg { background-color: #3b82f6; border-color: #2563eb; }
         input:checked + .toggle-bg .toggle-dot { transform: translateX(1.25rem); background-color: white; }
 
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #000; }
-        ::-webkit-scrollbar-thumb { background: #1f1f1f; border-radius: 4px; }
+        /* Smooth Scrolling & Scrollbar verstecken für Mobile */
+        .overflow-x-auto {
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        .overflow-x-auto::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -34,9 +34,7 @@
                 <span id="refresh-indicator" class="text-green-500 opacity-0 transition-opacity">● Live Sync</span>
             </div>
         </div>
-        <div class="flex items-center gap-4">
-            <a href="/logout" class="text-xs bg-gray-900 hover:bg-gray-800 border border-gray-800 px-4 py-2 rounded-lg transition text-gray-300">Logout</a>
-        </div>
+        <a href="/logout" class="text-xs bg-gray-900 hover:bg-gray-800 border border-gray-800 px-4 py-2 rounded-lg transition text-gray-300 font-medium">Logout</a>
     </div>
 
     <div class="max-w-7xl mx-auto space-y-8">
@@ -44,32 +42,39 @@
         <div class="card rounded-xl overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-800 flex justify-between items-center bg-white/[0.01]">
                 <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Torbox Aktivitäten</h2>
-                <div class="flex gap-2 text-[10px]">
-                    <span class="bg-blue-900/20 px-2 py-1 rounded text-blue-400 border border-blue-800/30 font-bold">API ACTIVE</span>
-                </div>
+                <span class="bg-blue-900/20 px-2 py-1 rounded text-blue-400 border border-blue-800/30 text-[10px] font-bold">API ACTIVE</span>
             </div>
-            
             <div id="table-container">
-                <div class="p-20 text-center text-gray-600 animate-pulse text-sm font-medium tracking-tight">Initialisiere Usenet-Daten...</div>
+                <div class="p-20 text-center text-gray-600 animate-pulse text-sm">Lade Usenet-Daten...</div>
             </div>
         </div>
 
         <div class="card rounded-xl overflow-hidden">
-            <div class="px-6 py-3 border-b border-gray-800 bg-white/[0.01] flex justify-between items-center">
-                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest text-[11px]">Proxy-Weiterleitungen (SABnzbd)</h2>
+            <div class="px-6 py-3 border-b border-gray-800 bg-white/[0.01] flex flex-wrap justify-between items-center gap-4">
+                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Proxy-Aktivität</h2>
                 
-                <label class="inline-flex items-center cursor-pointer group">
-                    <span class="mr-3 text-[10px] font-bold text-gray-500 uppercase tracking-tighter group-hover:text-gray-300 transition-colors">Nur NZB-Files</span>
-                    <div class="relative">
-                        <input type="checkbox" id="filter-toggle" class="sr-only" checked onchange="updateDashboard(true)">
-                        <div class="toggle-bg">
-                            <div class="toggle-dot"></div>
-                        </div>
+                <div class="flex items-center gap-4 flex-grow md:flex-grow-0">
+                    <div class="relative flex-grow">
+                        <input type="text" id="search-input" placeholder="NZB suchen..." 
+                               class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-64"
+                               oninput="debounceSearch()">
+                        <svg class="w-3.5 h-3.5 text-gray-600 absolute right-3 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
                     </div>
-                </label>
+
+                    <label class="inline-flex items-center cursor-pointer group">
+                        <span class="mr-3 text-[10px] font-bold text-gray-500 uppercase group-hover:text-gray-300 transition-colors">Nur NZBs</span>
+                        <div class="relative">
+                            <input type="checkbox" id="filter-toggle" class="sr-only" checked onchange="updateDashboard(true)">
+                            <div class="toggle-bg"><div class="toggle-dot"></div></div>
+                        </div>
+                    </label>
+                </div>
             </div>
+            
             <div id="history-container">
-                <div class="p-10 text-center text-gray-600 text-xs font-medium">Lade Proxy-Logs...</div>
+                <div class="p-10 text-center text-gray-600 text-xs font-medium">Lade Logs...</div>
             </div>
         </div>
     </div>
@@ -78,19 +83,19 @@
         let currentPageT = 1;
         let currentPageH = 1;
         let isRefreshing = false;
+        let searchTimeout;
 
-        // Globale Navigation (wird sofort getriggert)
-        window.changePage = function(newPage) {
-            if (currentPageT === newPage) return;
-            currentPageT = newPage;
-            updateDashboard(true);
-        };
+        // Suche mit Verzögerung, um Server zu schonen
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentPageH = 1; 
+                updateDashboard(true);
+            }, 400);
+        }
 
-        window.changePageH = function(newPage) {
-            if (currentPageH === newPage) return;
-            currentPageH = newPage;
-            updateDashboard(true);
-        };
+        window.changePage = (p) => { currentPageT = p; updateDashboard(true); };
+        window.changePageH = (p) => { currentPageH = p; updateDashboard(true); };
 
         async function updateDashboard(force = false) {
             if (isRefreshing && !force) return;
@@ -99,24 +104,29 @@
             const indicator = document.getElementById('refresh-indicator');
             if (indicator) indicator.style.opacity = '1';
 
-            // Filter-Status aus der Checkbox lesen
+            // 1. Scroll-Position merken (besonders wichtig für Mobile)
+            const historyContainer = document.getElementById('history-container');
+            const historyScroll = historyContainer.querySelector('.overflow-x-auto');
+            const historyScrollPos = historyScroll ? historyScroll.scrollLeft : 0;
+
             const filterActive = document.getElementById('filter-toggle').checked ? 1 : 0;
+            const searchTerm = document.getElementById('search-input').value;
 
             try {
-                const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterActive}&_t=${Date.now()}`;
+                const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterActive}&search=${encodeURIComponent(searchTerm)}&_t=${Date.now()}`;
                 const response = await fetch(url);
                 
-                if (response.status === 401) {
-                    window.location.href = "/login";
-                    return;
-                }
-
+                if (response.status === 401) { window.location.href = "/login"; return; }
                 const data = await response.json();
                 
                 if (data.status === "success") {
                     document.getElementById('table-container').innerHTML = data.table_html;
                     document.getElementById('history-container').innerHTML = data.history_html;
                     document.getElementById('total-usenet').innerText = data.total_history;
+
+                    // 2. Scroll-Position sofort wiederherstellen
+                    const newHistoryScroll = historyContainer.querySelector('.overflow-x-auto');
+                    if (newHistoryScroll) newHistoryScroll.scrollLeft = historyScrollPos;
                 }
             } catch (error) {
                 console.error("Sync Error:", error);
@@ -126,9 +136,8 @@
             }
         }
 
-        // Auto-Refresh alle 5 Sekunden
+        // Auto-Refresh
         setInterval(() => updateDashboard(false), 5000);
-        // Initialer Load (sofort)
         updateDashboard(true);
     </script>
 </body>

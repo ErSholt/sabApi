@@ -1,4 +1,5 @@
 import os
+from re import search
 import sqlite3
 import datetime
 import math
@@ -14,7 +15,7 @@ app = FastAPI()
 # --- KONFIGURATION ---
 BACKEND_URL = os.getenv("BACKEND_URL", "http://altmount:8080/sabnzbd/api")
 BLACKHOLE_DIR = os.getenv("BLACKHOLE_DIR", "/blackhole")
-DATABASE_DIR = os.getenv("DATABASE_DIR", "/config")
+DATABASE_DIR = os.getenv("DATABASE_DIR", "./")
 TORBOX_API_KEY = os.getenv("TORBOX_API_KEY", "")
 PROXY_USER = os.getenv("PROXY_USER", "admin")
 PROXY_PASS = os.getenv("PROXY_PASS", "password")
@@ -60,13 +61,19 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
         # 1. Dynamische History Logik (Frontend Filter)
         offset_h = (page_h - 1) * ITEMS_PER_PAGE
         # Bedingung: Wenn filter_active=1, blende "Request" und Status-Anfragen aus
-        condition = "WHERE info != 'Request' AND mode NOT IN ('queue', 'status', 'history')" if int(filter_active) == 1 else ""
-        
+        conditions = []
+        if int(filter_active) == 1:
+            conditions.append("info != 'Request' AND mode NOT IN ('queue', 'status', 'history')")
+        if search:
+            conditions.append(f"info LIKE '%{search}%'")
+
+        where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
         with sqlite3.connect(DB_PATH) as conn:
-            total_h = conn.execute(f"SELECT COUNT(*) FROM history {condition}").fetchone()[0]
+            total_h = conn.execute(f"SELECT COUNT(*) FROM history {where_clause}").fetchone()[0]
             total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
-            cur = conn.execute(f"SELECT time, mode, info, status FROM history {condition} ORDER BY id DESC LIMIT ? OFFSET ?", 
-                               (ITEMS_PER_PAGE, offset_h))
+            cur = conn.execute(f"SELECT time, mode, info, status FROM history {where_clause} ORDER BY id DESC LIMIT ? OFFSET ?", 
+                            (ITEMS_PER_PAGE, offset_h))
             history_data = [{"time": r[0], "mode": r[1], "info": r[2], "status": r[3]} for r in cur.fetchall()]
 
         # 2. Torbox Usenet API
