@@ -98,7 +98,9 @@
         function debounceSearch() {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(() => {
+                // Wenn gesucht wird, fangen wir in beiden Listen wieder vorne an
                 currentPageH = 1; 
+                currentPageT = 1; 
                 updateDashboard(true);
             }, 400);
         }
