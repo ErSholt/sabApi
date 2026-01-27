@@ -15,7 +15,7 @@ app = FastAPI()
 # --- KONFIGURATION ---
 BACKEND_URL = os.getenv("BACKEND_URL", "http://altmount:8080/sabnzbd/api")
 BLACKHOLE_DIR = os.getenv("BLACKHOLE_DIR", "/blackhole")
-DATABASE_DIR = os.getenv("DATABASE_DIR", "./")
+DATABASE_DIR = os.getenv("DATABASE_DIR", "/config")
 TORBOX_API_KEY = os.getenv("TORBOX_API_KEY", "")
 PROXY_USER = os.getenv("PROXY_USER", "admin")
 PROXY_PASS = os.getenv("PROXY_PASS", "password")
