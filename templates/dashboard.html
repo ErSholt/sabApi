@@ -15,32 +15,24 @@
         .toggle-dot { width: 0.85rem; height: 0.85rem; background-color: #9ca3af; border-radius: 9999px; position: absolute; top: 0.125rem; left: 0.125rem; transition: all 0.2s; }
         input:checked + .toggle-bg { background-color: #3b82f6; border-color: #2563eb; }
         input:checked + .toggle-bg .toggle-dot { transform: translateX(1.25rem); background-color: white; }
-        /* Torbox spezifische Farben */
+
+        /* Torbox spezifische Klassen für das Snippet */
         .badge-usenet { background-color: #4c1d95; color: #ede9fe; border: 1px solid #5b21b6; }
         .badge-completed { background-color: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
+        .progress-blue { background-color: #3b82f6; box-shadow: 0 0 10px rgba(59, 130, 246, 0.3); transition: width 0.8s ease; }
 
-        /* Progress Bar Farben */
-        .progress-blue { 
-            background-color: #3b82f6; 
-            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
-            transition: width 0.8s ease-in-out; 
-        }
-        /* Smooth Scrolling & Scrollbar verstecken für Mobile */
-        .overflow-x-auto {
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: none;
-        }
+        .overflow-x-auto { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
         .overflow-x-auto::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="p-4 md:p-8">
+<body class="p-4 md:p-8 text-gray-200">
 
-    <div class="max-w-7xl mx-auto flex justify-between items-center mb-10">
+    <div class="max-w-7xl mx-auto flex justify-between items-center mb-8">
         <div>
             <h1 class="text-2xl font-bold tracking-tight text-white">NZB <span class="text-blue-500">Proxy</span></h1>
             <div class="flex gap-4 mt-2 text-[11px] font-medium text-gray-500 uppercase tracking-wider">
                 <span>Einträge: <span class="text-blue-400" id="total-usenet">...</span></span>
-                <span id="refresh-indicator" class="text-green-500 opacity-0 transition-opacity">● Live Sync</span>
+                <span id="refresh-indicator" class="text-green-500 opacity-0 transition-opacity">● Live</span>
             </div>
         </div>
         <a href="/logout" class="text-xs bg-gray-900 hover:bg-gray-800 border border-gray-800 px-4 py-2 rounded-lg transition text-gray-300 font-medium">Logout</a>
@@ -49,27 +41,31 @@
     <div class="max-w-7xl mx-auto space-y-8">
         
         <div class="card rounded-xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-800 flex justify-between items-center bg-white/[0.01]">
+            <div class="px-6 py-4 border-b border-gray-800 flex flex-wrap justify-between items-center gap-4 bg-white/[0.01]">
                 <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Torbox Aktivitäten</h2>
-                <span class="bg-blue-900/20 px-2 py-1 rounded text-blue-400 border border-blue-800/30 text-[10px] font-bold">API ACTIVE</span>
+                
+                <div class="relative">
+                    <input type="text" id="search-torbox" placeholder="Downloads filtern..." 
+                           class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-48 md:w-64"
+                           oninput="debounceSearch('t')">
+                    <svg class="w-3 h-3 text-gray-600 absolute right-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
             </div>
             <div id="table-container">
-                <div class="p-20 text-center text-gray-600 animate-pulse text-sm">Lade Usenet-Daten...</div>
+                <div class="p-10 text-center text-gray-600 animate-pulse text-xs">Lade Torbox...</div>
             </div>
         </div>
 
         <div class="card rounded-xl overflow-hidden">
-            <div class="px-6 py-3 border-b border-gray-800 bg-white/[0.01] flex flex-wrap justify-between items-center gap-4">
+            <div class="px-6 py-4 border-b border-gray-800 flex flex-wrap justify-between items-center gap-4 bg-white/[0.01]">
                 <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Proxy-Aktivität</h2>
                 
                 <div class="flex items-center gap-4 flex-grow md:flex-grow-0">
                     <div class="relative flex-grow">
-                        <input type="text" id="search-input" placeholder="NZB suchen..." 
-                               class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-64"
-                               oninput="debounceSearch()">
-                        <svg class="w-3.5 h-3.5 text-gray-600 absolute right-3 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                        </svg>
+                        <input type="text" id="search-history" placeholder="Logs durchsuchen..." 
+                               class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-64"
+                               oninput="debounceSearch('h')">
+                        <svg class="w-3 h-3 text-gray-600 absolute right-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </div>
 
                     <label class="inline-flex items-center cursor-pointer group">
@@ -108,46 +104,55 @@
 
         async function updateDashboard(force = false) {
             if (isRefreshing && !force) return;
-            isRefreshing = true;
+            
+            const searchTorboxEl = document.getElementById('search-torbox');
+            const searchHistoryEl = document.getElementById('search-history');
+            const filterToggleEl = document.getElementById('filter-toggle');
 
+            if (!searchTorboxEl || !searchHistoryEl) return;
+
+            isRefreshing = true;
             const indicator = document.getElementById('refresh-indicator');
             if (indicator) indicator.style.opacity = '1';
 
-            // 1. Scroll-Position merken (besonders wichtig für Mobile)
-            const historyContainer = document.getElementById('history-container');
-            const historyScroll = historyContainer.querySelector('.overflow-x-auto');
-            const historyScrollPos = historyScroll ? historyScroll.scrollLeft : 0;
+            // Scroll Positionen merken
+            const tScroll = document.querySelector('#table-container .overflow-x-auto');
+            const hScroll = document.querySelector('#history-container .overflow-x-auto');
+            const tScrollPos = tScroll ? tScroll.scrollLeft : 0;
+            const hScrollPos = hScroll ? hScroll.scrollLeft : 0;
 
-            // Werte aus beiden Feldern auslesen
-            const searchT = document.getElementById('search-torbox').value;
-            const searchH = document.getElementById('search-history').value;
-            const filterActive = document.getElementById('filter-toggle').checked ? 1 : 0;
+            const searchT = searchTorboxEl.value;
+            const searchH = searchHistoryEl.value;
+            const filterActive = filterToggleEl.checked ? 1 : 0;
 
             try {
-                    const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterActive}&search_t=${encodeURIComponent(searchT)}&search_h=${encodeURIComponent(searchH)}&_t=${Date.now()}`;
-        
-                    const response = await fetch(url);
-                    const data = await response.json();
-                    
-                    if (data.status === "success") {
+                const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterActive}&search_t=${encodeURIComponent(searchT)}&search_h=${encodeURIComponent(searchH)}&_t=${Date.now()}`;
+                
+                const response = await fetch(url);
+                if (response.status === 401) { window.location.href = "/login"; return; }
+                
+                const data = await response.json();
+                if (data.status === "success") {
                     document.getElementById('table-container').innerHTML = data.table_html;
                     document.getElementById('history-container').innerHTML = data.history_html;
                     document.getElementById('total-usenet').innerText = data.total_history;
 
-                    // 2. Scroll-Position sofort wiederherstellen
-                    const newHistoryScroll = historyContainer.querySelector('.overflow-x-auto');
-                    if (newHistoryScroll) newHistoryScroll.scrollLeft = historyScrollPos;
+                    // Scroll wiederherstellen
+                    const newTScroll = document.querySelector('#table-container .overflow-x-auto');
+                    const newHScroll = document.querySelector('#history-container .overflow-x-auto');
+                    if (newTScroll) newTScroll.scrollLeft = tScrollPos;
+                    if (newHScroll) newHScroll.scrollLeft = hScrollPos;
                 }
             } catch (error) {
                 console.error("Sync Error:", error);
             } finally {
                 isRefreshing = false;
+                if (indicator) setTimeout(() => { indicator.style.opacity = '0'; }, 800);
             }
         }
 
-        // Auto-Refresh
         setInterval(() => updateDashboard(false), 5000);
-        updateDashboard(true);
+        document.addEventListener('DOMContentLoaded', () => updateDashboard(true));
     </script>
 </body>
 </html>
