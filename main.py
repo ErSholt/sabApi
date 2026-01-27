@@ -51,32 +51,43 @@ def is_authenticated(request: Request):
 
 # --- DASHBOARD ROUTE ---
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_only: int = 0, filter_active: int = 1):
+async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_only: int = 0, filter_active: int = 1, search: str = ""):
     if not is_authenticated(request):
         if content_only:
             return JSONResponse({"status": "unauthorized", "redirect": "/login"})
         return RedirectResponse(url="/login")
     
     try:
-        # 1. Dynamische History Logik (Frontend Filter)
+        # --- PROXY HISTORY LOGIK (SABNZBD) ---
         offset_h = (page_h - 1) * ITEMS_PER_PAGE
-        # Bedingung: Wenn filter_active=1, blende "Request" und Status-Anfragen aus
+        
+        # Dynamische SQL-Bedingungen aufbauen
         conditions = []
+        
+        # 1. NZB Filter (Nur wenn im Frontend aktiv)
         if int(filter_active) == 1:
             conditions.append("info != 'Request' AND mode NOT IN ('queue', 'status', 'history')")
-        if search:
-            conditions.append(f"info LIKE '%{search}%'")
-
+        
+        # 2. Such-Filter (Nur wenn Text eingegeben wurde)
+        if search.strip():
+            # Einfaches Escaping für SQL-Sicherheit
+            safe_search = search.replace("'", "''")
+            conditions.append(f"info LIKE '%{safe_search}%'")
+        
+        # WHERE-Klausel zusammenfügen
         where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
-
+        
         with sqlite3.connect(DB_PATH) as conn:
+            # Anzahl der Einträge für Pagination ermitteln
             total_h = conn.execute(f"SELECT COUNT(*) FROM history {where_clause}").fetchone()[0]
             total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
-            cur = conn.execute(f"SELECT time, mode, info, status FROM history {where_clause} ORDER BY id DESC LIMIT ? OFFSET ?", 
-                            (ITEMS_PER_PAGE, offset_h))
+            
+            # Die eigentlichen Daten abrufen
+            query = f"SELECT time, mode, info, status FROM history {where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
+            cur = conn.execute(query, (ITEMS_PER_PAGE, offset_h))
             history_data = [{"time": r[0], "mode": r[1], "info": r[2], "status": r[3]} for r in cur.fetchall()]
 
-        # 2. Torbox Usenet API
+        # --- TORBOX USENET API LOGIK ---
         torbox_list, total_t_pages, torbox_error = [], 1, None
         if TORBOX_API_KEY:
             try:
@@ -94,13 +105,23 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                 torbox_error = "Torbox API Timeout"
 
         # AJAX REFRESH WEICHE
+       # --- AJAX REFRESH WEICHE ---
         if int(content_only) == 1:
+            # Torbox Tabelle rendern
             table_html = templates.get_template("table_snippet.html").render({
-                "torbox_downloads": torbox_list, "page_t": page_t, "total_t_pages": total_t_pages, "torbox_error": torbox_error
+                "torbox_downloads": torbox_list, 
+                "page_t": page_t, 
+                "total_t_pages": total_t_pages, 
+                "torbox_error": torbox_error
             })
+            
+            # History Tabelle rendern (inkl. Suchergebnis)
             history_html = templates.get_template("history_snippet.html").render({
-                "request_log": history_data, "page_h": page_h, "total_h_pages": total_h_pages
+                "request_log": history_data, 
+                "page_h": page_h, 
+                "total_h_pages": total_h_pages
             })
+            
             return JSONResponse({
                 "status": "success", 
                 "table_html": table_html, 
@@ -108,16 +129,22 @@ async def dashboard(request: Request, page_h: int = 1, page_t: int = 1, content_
                 "total_history": total_h
             })
 
-        # Normaler Seitenaufruf
+        # --- NORMALER SEITENAUFRUF (ERSTER LADEN) ---
         return templates.TemplateResponse("dashboard.html", {
-            "request": request, "request_log": history_data, 
-            "page_h": page_h, "total_h_pages": total_h_pages,
-            "page_t": page_t, "total_t_pages": total_t_pages, 
-            "torbox_downloads": torbox_list, "torbox_error": torbox_error
+            "request": request, 
+            "request_log": history_data, 
+            "page_h": page_h, 
+            "total_h_pages": total_h_pages,
+            "page_t": page_t, 
+            "total_t_pages": total_t_pages, 
+            "torbox_downloads": torbox_list, 
+            "torbox_error": torbox_error
         })
 
     except Exception as e:
-        if content_only: return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+        print(f"Server Error: {e}")
+        if content_only: 
+            return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
         return HTMLResponse(content=f"Server Fehler: {e}", status_code=500)
 
 # --- LOGIN / LOGOUT ---
