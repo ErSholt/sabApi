@@ -127,8 +127,8 @@ async def dashboard(
                                     {
                                         "name": i.get("name", "Unbekannt"), 
                                         "progress": round(float(i.get("progress", 0)) * 100, 1), 
-                                        # Wir kürzen extrem lange Status-Texte für die Grid-Ansicht
-                                        "state": i.get("download_state", "unknown").replace("_", " ").upper()[:20] + "..." if len(i.get("download_state", "")) > 25 else i.get("download_state", "unknown")
+                                        # WICHTIG: Hier nicht mehr hart abschneiden, damit der Tooltip alles zeigt
+                                        "state": i.get("download_state", "unknown").replace("_", " ").upper()
                                     } 
                                     for i in selected_data
                                 ]
@@ -139,18 +139,18 @@ async def dashboard(
                 torbox_error = "Torbox API nicht erreichbar"
 
         # --- 3. AJAX REFRESH WEICHE ---
-        if int(content_only) == 1:
-                    return JSONResponse({
-                        "status": "success",
-                        "table_html": templates.get_template("table_snippet.html").render({
-                            "torbox_downloads": torbox_list, "page_t": page_t, 
-                            "total_t_pages": total_t_pages, "torbox_error": torbox_error
-                        }),
-                        "history_html": templates.get_template("history_snippet.html").render({
-                            "request_log": history_data, "page_h": page_h, "total_h_pages": total_h_pages
-                        }),
-                        "total_history": total_h
-                    })
+            if int(content_only) == 1:
+                        return JSONResponse({
+                            "status": "success",
+                            "table_html": templates.get_template("table_snippet.html").render({
+                                "torbox_downloads": torbox_list, "page_t": page_t, 
+                                "total_t_pages": total_t_pages, "torbox_error": torbox_error
+                            }),
+                            "history_html": templates.get_template("history_snippet.html").render({
+                                "request_log": history_data, "page_h": page_h, "total_h_pages": total_h_pages
+                            }),
+                            "total_history": total_h
+                        })
 
         # --- 4. NORMALER SEITENAUFRUF ---
         return templates.TemplateResponse("dashboard.html", {

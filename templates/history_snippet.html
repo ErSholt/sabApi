@@ -19,7 +19,8 @@
                 </td>
                 <td class="px-6 py-3 text-right">
                     {% set status = log.status|string %}
-                    <span class="inline-block px-2 py-1 rounded-[4px] text-[10px] font-bold border
+                    <span title="{{ status }}" 
+                        class="inline-block px-2 py-1 rounded-[4px] text-[10px] font-bold border truncate max-w-[60px] cursor-help
                         {% if status == '200' %}
                             bg-green-500/10 text-green-500 border-green-500/20
                         {% elif status == '401' or status == '403' %}

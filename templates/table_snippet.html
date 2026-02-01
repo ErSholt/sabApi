@@ -19,7 +19,8 @@
                 </td>
                 <td class="px-6 py-3 text-right">
                     {% set s = item.state.lower() %}
-                    <span class="inline-block px-2 py-1 rounded-[4px] text-[9px] font-extrabold whitespace-nowrap uppercase tracking-tight border
+                    <span title="{{ item.state }}" 
+                        class="inline-block px-2 py-1 rounded-[4px] text-[9px] font-extrabold uppercase tracking-tight border truncate max-w-[120px] cursor-help
                         {% if 'completed' in s or 'cached' in s or 'success' in s %}
                             bg-green-500/10 text-green-400 border-green-500/20
                         {% elif 'fail' in s or 'error' in s or 'abort' in s %}
