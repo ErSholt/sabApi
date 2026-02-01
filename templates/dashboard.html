@@ -140,7 +140,13 @@
         // Initiale View Mode laden
         const savedMode = localStorage.getItem('dashboardViewMode') || 'stacked';
         setViewMode(savedMode);
-
+        // Funktion für mobile Tooltips
+        function showDetail(text) {
+            if (!text) return;
+            // Auf Mobilgeräten nutzen wir ein einfaches Alert, 
+            // oder du kannst hier ein schöneres Modal einbauen.
+            alert("Details:\n" + text);
+        }
 
         // --- DASHBOARD LOGIC (Wie zuvor) ---
         function debounceSearch(type) {
