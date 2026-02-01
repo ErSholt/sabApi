@@ -4,6 +4,7 @@ import httpx
 import asyncio
 from fastapi import FastAPI, Request, Depends, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
@@ -13,7 +14,23 @@ TORBOX_API_KEY = "DEIN_TORBOX_KEY"
 DB_PATH = "nzb_proxy.db"
 ITEMS_PER_PAGE = 10
 
+
 app = FastAPI()
+
+
+# Erlaube JavaScript von deiner eigenen Seite ('self')
+# und inline-Skripte (die in der dashboard.html stehen)
+@app.middleware("http")
+async def add_csp_header(request: Request, call_next):
+    response = await call_next(request)
+    # Wir setzen die Policy so, dass Skripte von deiner Domain
+    # und Inline-Skripte erlaubt sind:
+    response.headers["Content-Security-Policy"] = (
+        "script-src 'self' 'unsafe-inline' https://org.enteente.nl;"
+    )
+    return response
+
+
 templates = Jinja2Templates(directory="templates")
 
 
