@@ -2,29 +2,27 @@ import math
 import sqlite3
 import httpx
 import asyncio
-import os  # Wichtig für Docker Umgebungsvariablen
+import os
 from fastapi import FastAPI, Request, Depends, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from typing import Optional
+from typing import Optional, Any
 
 # --- KONFIGURATION AUS DOCKER-UMGEBUNGSVARIABLEN ---
-TORBOX_API_KEY = os.getenv("TORBOX_API_KEY", "")
-DATABASE_DIR = os.getenv("DATABASE_DIR", "./")
+TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
+DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
 DB_PATH = os.path.join(DATABASE_DIR, "nzb_proxy.db")
+PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
+PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
-# Beispiel Authentifizierung (Nutzt jetzt ebenfalls Docker-Envs)
 def get_current_user(request: Request):
-    user = request.cookies.get("user")
-    if not user:
-        return None
-    return user
+    return request.cookies.get("user")
 
 
 @app.middleware("http")
@@ -36,59 +34,45 @@ async def add_csp_header(request: Request, call_next):
     return response
 
 
+# --- DASHBOARD ROUTE ---
 @app.api_route("/", methods=["GET", "POST"], response_class=HTMLResponse)
 async def dashboard(
     request: Request,
-    page_t: Optional[int] = 1,
-    page_h: Optional[int] = 1,
-    filter_active: Optional[int] = 1,
+    page_t: Any = 1,
+    page_h: Any = 1,
+    filter_active: Any = 1,
     search_t: str = "",
     search_h: str = "",
-    content_only: Optional[int] = 0,
+    content_only: Any = 0,
     username: str = Depends(get_current_user),
 ):
     if not username:
-        return RedirectResponse(url="/login")
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    # --- DATEN-EXTRAKTION AUS POST ODER GET ---
+    # Daten-Extraktion (Pylance-safe)
     if request.method == "POST":
         try:
             form_data = await request.form()
-
-            # Wir holen den Wert und konvertieren ihn sicher zu einem String,
-            # bevor wir int() darauf anwenden. Das beruhigt Pylance.
-            raw_page_t = form_data.get("page_t")
-            if raw_page_t is not None:
-                page_t = int(str(raw_page_t))
-
-            raw_page_h = form_data.get("page_h")
-            if raw_page_h is not None:
-                page_h = int(str(raw_page_h))
-
-            raw_content_only = form_data.get("content_only")
-            if raw_content_only is not None:
-                content_only = int(str(raw_content_only))
-
-            raw_filter_active = form_data.get("filter_active")
-            if raw_filter_active is not None:
-                filter_active = int(str(raw_filter_active))
-
-            # Bei Strings ist es einfacher
+            page_t = form_data.get("page_t", page_t)
+            page_h = form_data.get("page_h", page_h)
+            content_only = form_data.get("content_only", content_only)
+            filter_active = form_data.get("filter_active", filter_active)
             search_t = str(form_data.get("search_t", ""))
             search_h = str(form_data.get("search_h", ""))
-        except (ValueError, TypeError) as e:
-            print(f"Form conversion error: {e}")
+        except Exception:
+            pass
 
+    # Sicherstellen der Typen
     try:
-        page_t = int(page_t) if page_t else 1
-        page_h = int(page_h) if page_h else 1
-        content_only = int(content_only) if content_only else 0
-        filter_active = int(filter_active) if filter_active else 0
+        p_t = int(str(page_t)) if page_t else 1
+        p_h = int(str(page_h)) if page_h else 1
+        c_only = int(str(content_only)) if content_only else 0
+        f_active = int(str(filter_active)) if filter_active else 0
     except:
-        page_t, page_h, content_only, filter_active = 1, 1, 0, 1
+        p_t, p_h, c_only, f_active = 1, 1, 0, 1
 
-    search_t_term = search_t.lower().strip() if search_t else ""
-    search_h_term = search_h.lower().strip() if search_h else ""
+    search_t_term = search_t.lower().strip()
+    search_h_term = search_h.lower().strip()
 
     try:
 
@@ -100,7 +84,7 @@ async def dashboard(
                     cursor = conn.cursor()
                     query = "SELECT * FROM history WHERE 1=1"
                     params = []
-                    if filter_active:
+                    if f_active:
                         query += " AND mode = 'addfile'"
                     if search_h_term:
                         query += " AND info LIKE ?"
@@ -108,9 +92,8 @@ async def dashboard(
 
                     cursor.execute(f"SELECT COUNT(*) FROM ({query})", params)
                     h_total = cursor.fetchone()[0]
-
                     query += " ORDER BY id DESC LIMIT ? OFFSET ?"
-                    params.extend([ITEMS_PER_PAGE, (page_h - 1) * ITEMS_PER_PAGE])
+                    params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
                     cursor.execute(query, params)
                     h_data = [dict(row) for row in cursor.fetchall()]
             except:
@@ -137,10 +120,9 @@ async def dashboard(
                                 if i.get("name")
                                 and search_t_term in str(i.get("name")).lower()
                             ]
-
                         t_total = len(all_data)
                         t_pages = max(1, math.ceil(t_total / ITEMS_PER_PAGE))
-                        start = (page_t - 1) * ITEMS_PER_PAGE
+                        start = (p_t - 1) * ITEMS_PER_PAGE
                         selected = all_data[start : start + ITEMS_PER_PAGE]
                         t_list = [
                             {
@@ -164,14 +146,14 @@ async def dashboard(
 
         total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
 
-        if content_only == 1:
+        if c_only == 1:
             return JSONResponse(
                 {
                     "status": "success",
                     "table_html": templates.get_template("torbox_table.html").render(
                         {
                             "torbox_downloads": torbox_list,
-                            "page_t": page_t,
+                            "page_t": p_t,
                             "total_t_pages": total_t_pages,
                             "torbox_error": torbox_error,
                         }
@@ -181,7 +163,7 @@ async def dashboard(
                     ).render(
                         {
                             "request_log": history_data,
-                            "page_h": page_h,
+                            "page_h": p_h,
                             "total_h_pages": total_h_pages,
                         }
                     ),
@@ -195,9 +177,9 @@ async def dashboard(
                 "request": request,
                 "torbox_downloads": torbox_list,
                 "request_log": history_data,
-                "page_t": page_t,
+                "page_t": p_t,
                 "total_t_pages": total_t_pages,
-                "page_h": page_h,
+                "page_h": p_h,
                 "total_h_pages": total_h_pages,
                 "total_history": total_h,
                 "torbox_error": torbox_error,
@@ -205,14 +187,28 @@ async def dashboard(
         )
 
     except Exception as e:
-        print(f"Server Error: {e}")
-        if content_only:
+        if c_only:
             return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
         return HTMLResponse(content=f"Fehler: {e}", status_code=500)
 
 
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+# --- LOGIN ROUTE (FIXED) ---
+@app.api_route("/login", methods=["GET", "POST"], response_class=HTMLResponse)
+async def login(request: Request):
+    if request.method == "POST":
+        form_data = await request.form()
+        username = form_data.get("username")
+        password = form_data.get("password")
+
+        if username == PROXY_USER and password == PROXY_PASS:
+            response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+            response.set_cookie(key="user", value=str(username))
+            return response
+        else:
+            return templates.TemplateResponse(
+                "login.html", {"request": request, "error": "Ungültige Anmeldedaten"}
+            )
+
     return templates.TemplateResponse("login.html", {"request": request})
 
 
