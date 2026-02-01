@@ -12,7 +12,7 @@ from typing import Optional, Any
 # --- KONFIGURATION AUS DOCKER-UMGEBUNGSVARIABLEN ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
-DB_PATH = os.path.join(DATABASE_DIR, "nzb_proxy.db")
+DB_PATH = os.path.join(DATABASE_DIR, "proxy_history.db")
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
@@ -82,18 +82,18 @@ async def dashboard(
                 with sqlite3.connect(DB_PATH) as conn:
                     conn.row_factory = sqlite3.Row
                     cursor = conn.cursor()
-                    query = "SELECT * FROM history WHERE 1=1"
+
+                    # GEÄNDERT: Von 'history' zu 'proxy_history'
+                    query = "SELECT * FROM proxy_history WHERE 1=1"
                     params = []
 
-                    # WICHTIG: Prüfe ob filter_active wirklich 1 sein soll.
-                    # Wenn du alle Einträge sehen willst, setze es im Dashboard auf 0.
-                    if f_active == 1:
+                    if f_active:
                         query += " AND mode = 'addfile'"
-
                     if search_h_term:
                         query += " AND info LIKE ?"
                         params.append(f"%{search_h_term}%")
 
+                    # GEÄNDERT: Auch hier den Tabellennamen anpassen
                     cursor.execute(f"SELECT COUNT(*) FROM ({query})", params)
                     h_total = cursor.fetchone()[0]
 
@@ -101,15 +101,7 @@ async def dashboard(
                     params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
 
                     cursor.execute(query, params)
-                    rows = cursor.fetchall()
-                    h_data = [dict(row) for row in rows]
-
-                    # Debug-Ausgabe in die Docker-Logs
-                    if not h_data:
-                        print(
-                            f"DEBUG: Keine Daten in History gefunden. Filter 'addfile': {f_active}"
-                        )
-
+                    h_data = [dict(row) for row in cursor.fetchall()]
             except Exception as e:
                 print(f"DB Error in get_history: {e}")
             return h_data, h_total
