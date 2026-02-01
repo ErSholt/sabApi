@@ -92,52 +92,45 @@ async def dashboard(
             cur = conn.execute(query, (ITEMS_PER_PAGE, offset_h))
             history_data = [{"time": r[0], "mode": r[1], "info": r[2], "status": r[3]} for r in cur.fetchall()]
 
-        # --- 2. TORBOX USENET API LOGIK (API + Python-Filter) ---
-        torbox_list, total_t_pages, torbox_error = [], 1, None
-        
-        if TORBOX_API_KEY:
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        "https://api.torbox.app/v1/api/usenet/mylist", 
-                        headers={"Authorization": f"Bearer {TORBOX_API_KEY}"}, 
-                        timeout=5.0
-                    )
-                    
-                    if resp.status_code == 200:
-                        all_data = resp.json().get("data", [])
-                        if not isinstance(all_data, list): all_data = []
+        # --- 2. TORBOX USENET API LOGIK ---
+            torbox_list, total_t_pages, torbox_error = [], 1, None
+            
+            if TORBOX_API_KEY:
+                try:
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.get(
+                            "https://api.torbox.app/v1/api/usenet/mylist", 
+                            headers={"Authorization": f"Bearer {TORBOX_API_KEY}"}, 
+                            timeout=5.0
+                        )
+                        
+                        if resp.status_code == 200:
+                            all_data = resp.json().get("data", [])
+                            if not isinstance(all_data, list): all_data = []
 
-                        # Separater Filter nur für Torbox-Einträge
-                        if search_t_term:
-                            all_data = [
-                                i for i in all_data 
-                                if i.get("name") and search_t_term in str(i.get("name")).lower()
+                            if search_t_term:
+                                all_data = [i for i in all_data if i.get("name") and search_t_term in str(i.get("name")).lower()]
+                            
+                            total_items_t = len(all_data)
+                            total_t_pages = max(1, math.ceil(total_items_t / ITEMS_PER_PAGE))
+                            
+                            start = (page_t - 1) * ITEMS_PER_PAGE
+                            end = start + ITEMS_PER_PAGE
+                            selected_data = all_data[start:end]
+
+                            torbox_list = [
+                                {
+                                    "name": i.get("name", "Unbekannt"), 
+                                    "progress": round(float(i.get("progress", 0)) * 100, 1), 
+                                    # WICHTIG: Wir senden den kompletten Text für den Tooltip
+                                    "state": i.get("download_state", "unknown").replace("_", " ").upper()
+                                } 
+                                for i in selected_data
                             ]
-                        
-                        total_items_t = len(all_data)
-                        total_t_pages = max(1, math.ceil(total_items_t / ITEMS_PER_PAGE))
-                        
-                        # Pagination für Torbox
-                        start = (page_t - 1) * ITEMS_PER_PAGE
-                        end = start + ITEMS_PER_PAGE
-                        selected_data = all_data[start:end]
-
-                        torbox_list = [
-                                    {
-                                        "name": i.get("name", "Unbekannt"), 
-                                        "progress": round(float(i.get("progress", 0)) * 100, 1), 
-                                        # WICHTIG: Hier nicht mehr hart abschneiden, damit der Tooltip alles zeigt
-                                        "state": i.get("download_state", "unknown").replace("_", " ").upper()
-                                    } 
-                                    for i in selected_data
-                                ]
-                    else:
-                        torbox_error = f"Torbox API Fehler: {resp.status_code}"
-            except Exception as e:
-                print(f"Torbox API Error: {e}")
-                torbox_error = "Torbox API nicht erreichbar"
-
+                        else:
+                            torbox_error = f"Torbox API Fehler: {resp.status_code}"
+                except Exception as e:
+                    torbox_error = "Torbox API nicht erreichbar"
         # --- 3. AJAX REFRESH WEICHE ---
             if int(content_only) == 1:
                         return JSONResponse({
