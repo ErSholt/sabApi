@@ -147,7 +147,14 @@
             // oder du kannst hier ein schöneres Modal einbauen.
             alert("Details:\n" + text);
         }
-
+// Diese Funktion muss global verfügbar sein
+window.showDetail = function(text) {
+    if (!text || text === 'undefined') return;
+    
+    // Einfache mobile Lösung: Ein Alert-Fenster
+    // Du kannst dies später durch ein schöneres Modal ersetzen
+    alert("Status Details:\n" + text);
+};
         // --- DASHBOARD LOGIC (Wie zuvor) ---
         function debounceSearch(type) {
             clearTimeout(searchTimeout);
