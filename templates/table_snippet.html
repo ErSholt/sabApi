@@ -19,9 +19,9 @@
                 </td>
                 <td class="px-6 py-3 text-right">
                     {% set s = item.state.lower() %}
-                    {# Priorisierte Farbauswahl: Fehler zuerst prüfen #}
                     <span title="{{ item.state }}" 
-                        class="inline-block px-2 py-1 rounded-[4px] text-[9px] font-extrabold uppercase tracking-tight border truncate max-w-[120px] cursor-help
+                        onclick="showDetail('{{ item.state }}')"
+                        class="inline-block px-2 py-1 rounded-[4px] text-[9px] font-extrabold uppercase tracking-tight border truncate max-w-[120px] cursor-help active:scale-95 transition-transform
                         {% if 'fail' in s or 'error' in s or 'abort' in s or 'not' in s %}
                             bg-red-500/10 text-red-500 border-red-500/30
                         {% elif 'completed' in s or 'cached' in s or 'success' in s %}
