@@ -84,7 +84,7 @@ async def dashboard(
                     cursor = conn.cursor()
 
                     # GEÄNDERT: Von 'history' zu 'proxy_history'
-                    query = "SELECT * FROM proxy_history WHERE 1=1"
+                    query = "SELECT * FROM history WHERE 1=1"
                     params = []
 
                     if f_active:
