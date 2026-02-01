@@ -135,11 +135,11 @@ async def dashboard(
             if int(content_only) == 1:
                         return JSONResponse({
                             "status": "success",
-                            "table_html": templates.get_template("table_snippet.html").render({
+                            "table_html": templates.get_template("torbox_table.html").render({
                                 "torbox_downloads": torbox_list, "page_t": page_t, 
                                 "total_t_pages": total_t_pages, "torbox_error": torbox_error
                             }),
-                            "history_html": templates.get_template("history_snippet.html").render({
+                            "history_html": templates.get_template("altmount_table.html").render({
                                 "request_log": history_data, "page_h": page_h, "total_h_pages": total_h_pages
                             }),
                             "total_history": total_h
