@@ -3,11 +3,11 @@ import sqlite3
 import httpx
 import asyncio
 import os
+import time
 from fastapi import FastAPI, Request, Depends, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 
 # --- KONFIGURATION AUS DOCKER-UMGEBUNGSVARIABLEN ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
@@ -17,8 +17,34 @@ PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
 
+# --- GLOBALER RAM-CACHE (für die Millisekunden-Reaktion) ---
+torbox_memory_cache: List[Dict] = []
+last_api_fetch = 0
+
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+
+
+# --- DATABASE INITIALISIERUNG ---
+def init_db():
+    """Erstellt die Cache-Tabelle, falls sie nicht existiert."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS torbox_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                progress REAL,
+                state TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        )
+        conn.commit()
+
+
+init_db()
 
 
 def get_current_user(request: Request):
@@ -32,6 +58,67 @@ async def add_csp_header(request: Request, call_next):
         "script-src 'self' 'unsafe-inline' https://org.enteente.nl;"
     )
     return response
+
+
+# --- CORE FUNKTION: TORBOX DATEN MANAGEMENT ---
+async def refresh_torbox_data(force_api: bool = False):
+    global torbox_memory_cache, last_api_fetch
+    current_time = time.time()
+
+    # 1. API Abfrage nur alle 15 Sekunden oder wenn erzwungen
+    if force_api or (current_time - last_api_fetch > 15):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://api.torbox.app/v1/api/usenet/mylist",
+                    headers={"Authorization": f"Bearer {TORBOX_API_KEY}"},
+                    timeout=4.0,
+                )
+                if resp.status_code == 200:
+                    api_data = resp.json().get("data", [])
+                    new_cache = []
+
+                    with sqlite3.connect(DB_PATH) as conn:
+                        cursor = conn.cursor()
+                        # Alten Cache in DB leeren
+                        cursor.execute("DELETE FROM torbox_cache")
+
+                        for item in api_data:
+                            name = item.get("name", "Unbekannt")
+                            progress = round(float(item.get("progress", 0)) * 100, 1)
+                            state = (
+                                item.get("download_state", "unknown")
+                                .replace("_", " ")
+                                .upper()
+                            )
+
+                            # In DB speichern
+                            cursor.execute(
+                                "INSERT INTO torbox_cache (name, progress, state) VALUES (?, ?, ?)",
+                                (name, progress, state),
+                            )
+                            new_cache.append(
+                                {"name": name, "progress": progress, "state": state}
+                            )
+
+                        conn.commit()
+
+                    torbox_memory_cache = new_cache
+                    last_api_fetch = current_time
+                    return
+        except Exception as e:
+            print(f"Torbox API Error: {e}")
+
+    # 2. Fallback: Wenn API nicht läuft oder kein Update nötig, aus DB laden (falls RAM leer)
+    if not torbox_memory_cache:
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT name, progress, state FROM torbox_cache")
+                torbox_memory_cache = [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"Cache Load Error: {e}")
 
 
 # --- DASHBOARD ROUTE ---
@@ -49,172 +136,104 @@ async def dashboard(
     if not username:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    # Daten-Extraktion (Pylance-safe)
-    if request.method == "POST":
-        try:
-            form_data = await request.form()
-            page_t = form_data.get("page_t", page_t)
-            page_h = form_data.get("page_h", page_h)
-            content_only = form_data.get("content_only", content_only)
-            filter_active = form_data.get("filter_active", filter_active)
-            search_t = str(form_data.get("search_t", ""))
-            search_h = str(form_data.get("search_h", ""))
-        except Exception:
-            pass
-
-    # Sicherstellen der Typen
+    # Typ-Konvertierung
     try:
-        p_t = int(str(page_t)) if page_t else 1
-        p_h = int(str(page_h)) if page_h else 1
-        c_only = int(str(content_only)) if content_only else 0
-        f_active = int(str(filter_active)) if filter_active else 0
+        p_t, p_h = int(str(page_t)), int(str(page_h))
+        c_only, f_active = int(str(content_only)), int(str(filter_active))
     except:
         p_t, p_h, c_only, f_active = 1, 1, 0, 1
 
-    search_t_term = search_t.lower().strip()
-    search_h_term = search_h.lower().strip()
+    # Nur beim Auto-Refresh (content_only=1 und erste Seiten) die API triggern
+    should_fetch_api = c_only == 1 and p_t == 1 and p_h == 1
+    await refresh_torbox_data(force_api=should_fetch_api)
 
+    # --- TORBOX LOKAL (RAM) FILTERN ---
+    t_filtered = torbox_memory_cache
+    if search_t:
+        term = search_t.lower().strip()
+        t_filtered = [i for i in t_filtered if term in i["name"].lower()]
+
+    total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
+    torbox_list = t_filtered[(p_t - 1) * ITEMS_PER_PAGE : p_t * ITEMS_PER_PAGE]
+
+    # --- HISTORY LOKAL (DB) ---
+    history_data, total_h = [], 0
     try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            h_query = "SELECT * FROM history WHERE 1=1"
+            h_params = []
+            if f_active:
+                h_query += " AND mode = 'addfile'"
+            if search_h:
+                h_query += " AND info LIKE ?"
+                h_params.append(f"%{search_h.strip()}%")
 
-        async def get_history():
-            h_data, h_total = [], 0
-            try:
-                with sqlite3.connect(DB_PATH) as conn:
-                    conn.row_factory = sqlite3.Row
-                    cursor = conn.cursor()
+            cursor.execute(f"SELECT COUNT(*) FROM ({h_query})", h_params)
+            total_h = cursor.fetchone()[0]
 
-                    # GEÄNDERT: Von 'history' zu 'proxy_history'
-                    query = "SELECT * FROM history WHERE 1=1"
-                    params = []
-
-                    if f_active:
-                        query += " AND mode = 'addfile'"
-                    if search_h_term:
-                        query += " AND info LIKE ?"
-                        params.append(f"%{search_h_term}%")
-
-                    # GEÄNDERT: Auch hier den Tabellennamen anpassen
-                    cursor.execute(f"SELECT COUNT(*) FROM ({query})", params)
-                    h_total = cursor.fetchone()[0]
-
-                    query += " ORDER BY id DESC LIMIT ? OFFSET ?"
-                    params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
-
-                    cursor.execute(query, params)
-                    h_data = [dict(row) for row in cursor.fetchall()]
-            except Exception as e:
-                print(f"DB Error in get_history: {e}")
-            return h_data, h_total
-
-        async def get_torbox():
-            t_list, t_pages, t_err = [], 1, None
-            if not TORBOX_API_KEY:
-                return t_list, t_pages, "Key fehlt"
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        "https://api.torbox.app/v1/api/usenet/mylist",
-                        headers={"Authorization": f"Bearer {TORBOX_API_KEY}"},
-                        timeout=3.0,
-                    )
-                    if resp.status_code == 200:
-                        all_data = resp.json().get("data", [])
-                        if search_t_term:
-                            all_data = [
-                                i
-                                for i in all_data
-                                if i.get("name")
-                                and search_t_term in str(i.get("name")).lower()
-                            ]
-                        t_total = len(all_data)
-                        t_pages = max(1, math.ceil(t_total / ITEMS_PER_PAGE))
-                        start = (p_t - 1) * ITEMS_PER_PAGE
-                        selected = all_data[start : start + ITEMS_PER_PAGE]
-                        t_list = [
-                            {
-                                "name": i.get("name"),
-                                "progress": round(float(i.get("progress", 0)) * 100, 1),
-                                "state": i.get("download_state", "unknown")
-                                .replace("_", " ")
-                                .upper(),
-                            }
-                            for i in selected
-                        ]
-                    else:
-                        t_err = f"API Error {resp.status_code}"
-            except:
-                t_err = "Torbox Timeout"
-            return t_list, t_pages, t_err
-
-        (history_data, total_h), (torbox_list, total_t_pages, torbox_error) = (
-            await asyncio.gather(get_history(), get_torbox())
-        )
-
-        total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
-
-        if c_only == 1:
-            return JSONResponse(
-                {
-                    "status": "success",
-                    "table_html": templates.get_template("torbox_table.html").render(
-                        {
-                            "torbox_downloads": torbox_list,
-                            "page_t": p_t,
-                            "total_t_pages": total_t_pages,
-                            "torbox_error": torbox_error,
-                        }
-                    ),
-                    "history_html": templates.get_template(
-                        "altmount_table.html"
-                    ).render(
-                        {
-                            "request_log": history_data,
-                            "page_h": p_h,
-                            "total_h_pages": total_h_pages,
-                        }
-                    ),
-                    "total_history": total_h,
-                }
-            )
-
-        return templates.TemplateResponse(
-            "dashboard.html",
-            {
-                "request": request,
-                "torbox_downloads": torbox_list,
-                "request_log": history_data,
-                "page_t": p_t,
-                "total_t_pages": total_t_pages,
-                "page_h": p_h,
-                "total_h_pages": total_h_pages,
-                "total_history": total_h,
-                "torbox_error": torbox_error,
-            },
-        )
-
+            h_query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+            h_params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
+            cursor.execute(h_query, h_params)
+            history_data = [dict(row) for row in cursor.fetchall()]
     except Exception as e:
-        if c_only:
-            return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
-        return HTMLResponse(content=f"Fehler: {e}", status_code=500)
+        print(f"DB History Error: {e}")
+
+    total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
+
+    if c_only == 1:
+        return JSONResponse(
+            {
+                "status": "success",
+                "table_html": templates.get_template("torbox_table.html").render(
+                    {
+                        "torbox_downloads": torbox_list,
+                        "page_t": p_t,
+                        "total_t_pages": total_t_pages,
+                    }
+                ),
+                "history_html": templates.get_template("altmount_table.html").render(
+                    {
+                        "request_log": history_data,
+                        "page_h": p_h,
+                        "total_h_pages": total_h_pages,
+                    }
+                ),
+                "total_history": total_h,
+            }
+        )
+
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "torbox_downloads": torbox_list,
+            "request_log": history_data,
+            "page_t": p_t,
+            "total_t_pages": total_t_pages,
+            "page_h": p_h,
+            "total_h_pages": total_h_pages,
+            "total_history": total_h,
+        },
+    )
 
 
-# --- LOGIN ROUTE (FIXED) ---
+# --- LOGIN / LOGOUT ---
 @app.api_route("/login", methods=["GET", "POST"], response_class=HTMLResponse)
 async def login(request: Request):
     if request.method == "POST":
         form_data = await request.form()
-        username = form_data.get("username")
-        password = form_data.get("password")
-
-        if username == PROXY_USER and password == PROXY_PASS:
+        if (
+            str(form_data.get("username")) == PROXY_USER
+            and str(form_data.get("password")) == PROXY_PASS
+        ):
             response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-            response.set_cookie(key="user", value=str(username))
+            response.set_cookie(key="user", value=PROXY_USER)
             return response
-        else:
-            return templates.TemplateResponse(
-                "login.html", {"request": request, "error": "Ungültige Anmeldedaten"}
-            )
-
+        return templates.TemplateResponse(
+            "login.html", {"request": request, "error": "Ungültige Anmeldedaten"}
+        )
     return templates.TemplateResponse("login.html", {"request": request})
 
 
