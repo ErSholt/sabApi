@@ -84,20 +84,34 @@ async def dashboard(
                     cursor = conn.cursor()
                     query = "SELECT * FROM history WHERE 1=1"
                     params = []
-                    if f_active:
+
+                    # WICHTIG: Prüfe ob filter_active wirklich 1 sein soll.
+                    # Wenn du alle Einträge sehen willst, setze es im Dashboard auf 0.
+                    if f_active == 1:
                         query += " AND mode = 'addfile'"
+
                     if search_h_term:
                         query += " AND info LIKE ?"
                         params.append(f"%{search_h_term}%")
 
                     cursor.execute(f"SELECT COUNT(*) FROM ({query})", params)
                     h_total = cursor.fetchone()[0]
+
                     query += " ORDER BY id DESC LIMIT ? OFFSET ?"
                     params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
+
                     cursor.execute(query, params)
-                    h_data = [dict(row) for row in cursor.fetchall()]
-            except:
-                pass
+                    rows = cursor.fetchall()
+                    h_data = [dict(row) for row in rows]
+
+                    # Debug-Ausgabe in die Docker-Logs
+                    if not h_data:
+                        print(
+                            f"DEBUG: Keine Daten in History gefunden. Filter 'addfile': {f_active}"
+                        )
+
+            except Exception as e:
+                print(f"DB Error in get_history: {e}")
             return h_data, h_total
 
         async def get_torbox():

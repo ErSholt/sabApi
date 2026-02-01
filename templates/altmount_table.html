@@ -14,22 +14,29 @@
                         {{ log.info }}
                     </div>
                     <div class="text-[9px] text-gray-600 mt-1 font-mono uppercase tracking-tighter">
-                        {{ log.time.split(' ')[1] }} | {{ log.mode }}
+                        {{ log.time.split(' ')[1] if ' ' in log.time else log.time }} | {{ log.mode }}
                     </div>
                 </td>
                 <td class="px-6 py-3 text-right">
-                    {% set status = log.status|string %}
-                    <span title="{{ status }}" 
-                        class="inline-block px-2 py-1 rounded-[4px] text-[10px] font-bold border truncate max-w-[60px] cursor-help
-                        {% if status == '200' %}
+                    {% set status_val = log.status|string %}
+                    <span title="{{ status_val }}" 
+                          onclick="showDetail('{{ status_val }}')"
+                          class="inline-block px-2 py-1 rounded-[4px] text-[10px] font-bold border cursor-pointer active:scale-95 transition-transform
+                        {% if status_val == '200' %}
                             bg-green-500/10 text-green-500 border-green-500/20
-                        {% elif status == '401' or status == '403' %}
+                        {% elif status_val in ['401', '403', '404'] %}
                             bg-orange-500/10 text-orange-500 border-orange-500/20
                         {% else %}
                             bg-red-500/10 text-red-500 border-red-500/20
                         {% endif %}">
-                        {{ status }}
+                        {{ status_val }}
                     </span>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="2" class="px-6 py-10 text-center text-gray-500 text-xs italic">
+                    Keine Einträge in der Historie gefunden.
                 </td>
             </tr>
             {% endfor %}
