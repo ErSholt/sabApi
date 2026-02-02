@@ -21,6 +21,7 @@ from typing import Optional, Any, List, Dict
 # --- KONFIGURATION ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
+# Wir bleiben bei der neuen Datei, die du umbenannt hast
 DB_PATH = os.path.join(DATABASE_DIR, "proxy_altmount.db")
 BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "./blackhole"))
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
@@ -36,23 +37,14 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
-# --- DATABASE INITIALISIERUNG MIT UMBENENNUNG ---
+# --- DATABASE INITIALISIERUNG (TEST-VERSION) ---
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # Prüfen, ob die alte 'history' Tabelle existiert
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='history'"
-        )
-        if cursor.fetchone():
-            # Falls ja, umbenennen zu altmount
-            cursor.execute("ALTER TABLE history RENAME TO altmount")
-            conn.commit()
-            print("Datenbank: 'history' zu 'altmount' umbenannt.")
-
+        # Wir erstellen/nutzen hier REIN die Tabelle 'history'
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS altmount (
+            CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 info TEXT,
                 time TEXT,
@@ -110,8 +102,9 @@ async def sabnzbd_api(request: Request):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
+            # Hier schreiben wir in 'history'
             cursor.execute(
-                "INSERT INTO altmount (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
+                "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
                 (str(nzb_name), str(mode), "200"),
             )
             conn.commit()
@@ -203,7 +196,8 @@ async def dashboard(
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            h_query = "SELECT * FROM altmount WHERE 1=1"
+            # TEST: Wir fragen die Tabelle 'history' ab
+            h_query = "SELECT * FROM history WHERE 1=1"
             h_params = []
             if f_active:
                 h_query += " AND mode IN ('addfile', 'addurl')"
@@ -219,18 +213,8 @@ async def dashboard(
 
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
-                name = log.get("info", "")
-                # VERBESSERTE EXTRAKTION:
-                if "nzb=" in name:
-                    name = name.split("nzb=")[-1]
-                elif "/" in name:
-                    name = name.split("/")[-1]
-
-                # Saubermachen von Resten wie x-nzb'} oder Anführungszeichen
-                for char in ["'", "}", "]", "x-nzb"]:
-                    name = name.replace(char, "")
-
-                log["display_name"] = name.strip()
+                # Einfache Anzeige zur Fehlersuche
+                log["display_name"] = log.get("info", "Kein Name")
             altmount_data = raw_rows
     except:
         pass
