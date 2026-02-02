@@ -1,9 +1,9 @@
-<div class="overflow-x-auto">
+<div class="w-full overflow-x-auto">
     <table class="w-full text-left border-collapse table-fixed">
         <thead>
             <tr class="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800/50">
-                <th class="px-6 py-4 w-[82%]">Log-Details</th>
-                <th class="px-6 py-4 w-[18%] text-right">Status</th>
+                <th class="px-6 py-4 w-[88%]">Log-Details</th>
+                <th class="px-6 py-4 w-[12%] text-right">Status</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-800/30">
@@ -15,9 +15,9 @@
                         {{ log.time }} | {{ log.mode }}
                     </div>
                 </td>
-                <td class="px-6 py-3 text-right whitespace-nowrap">
+                <td class="px-6 py-3 text-right">
                     {% set s = log.status|string %}
-                    <span class="inline-flex items-center justify-center min-w-[35px] px-1.5 py-0.5 rounded-[4px] text-[10px] font-bold border
+                    <span class="inline-block px-1.5 py-0.5 rounded-[4px] text-[10px] font-bold border leading-tight
                         {% if s == '200' %}
                             bg-green-500/10 text-green-500 border-green-500/20
                         {% elif s in ['401', '403', '404', '405'] %}
@@ -29,8 +29,6 @@
                     </span>
                 </td>
             </tr>
-            {% else %}
-            <tr><td colspan="2" class="px-6 py-10 text-center text-gray-500 text-xs italic">Keine Historie gefunden.</td></tr>
             {% endfor %}
         </tbody>
     </table>
