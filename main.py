@@ -9,7 +9,7 @@ from fastapi import (
     Request,
     Depends,
     Form,
-    HTTPException,  # Korrigiert: hieß vorher fälschlicherweise HTMLElement
+    HTTPException,
     status,
     UploadFile,
     File,
@@ -18,20 +18,17 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional, Any, List, Dict
 
-# --- KONFIGURATION AUS DOCKER-UMGEBUNGSVARIABLEN ---
+# --- KONFIGURATION ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
-# Datenbankname angepasst auf Altmount
 DB_PATH = os.path.join(DATABASE_DIR, "proxy_altmount.db")
 BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "./blackhole"))
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
 
-# Sicherstellen, dass Verzeichnisse existieren
 os.makedirs(BLACKHOLE_DIR, exist_ok=True)
 
-# --- GLOBALER RAM-CACHE ---
 torbox_memory_cache: List[Dict] = []
 last_api_fetch = 0
 
@@ -39,43 +36,31 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
+# --- DATABASE INITIALISIERUNG MIT UMBENENNUNG ---
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-
-        # 1. Prüfen, ob die alte 'history' Tabelle existiert
+        # Prüfen, ob die alte 'history' Tabelle existiert
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='history'"
         )
-        old_table_exists = cursor.fetchone()
-
-        # 2. Prüfen, ob die neue 'altmount' Tabelle schon existiert
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='altmount'"
-        )
-        new_table_exists = cursor.fetchone()
-
-        if old_table_exists and not new_table_exists:
-            # Benenne die Tabelle um
+        if cursor.fetchone():
+            # Falls ja, umbenennen zu altmount
             cursor.execute("ALTER TABLE history RENAME TO altmount")
-            print(
-                "Datenbank: Tabelle 'history' wurde erfolgreich in 'altmount' umbenannt."
-            )
-        else:
-            # Falls gar nichts da ist (Neuinstallation), erstelle die Tabelle direkt als 'altmount'
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS altmount (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    info TEXT,
-                    time TEXT,
-                    mode TEXT,
-                    status TEXT
-                )
-            """
-            )
+            conn.commit()
+            print("Datenbank: 'history' zu 'altmount' umbenannt.")
 
-        # Cache Tabelle bleibt gleich
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS altmount (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                info TEXT,
+                time TEXT,
+                mode TEXT,
+                status TEXT
+            )
+        """
+        )
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS torbox_cache (
@@ -102,14 +87,12 @@ def get_current_user(request: Request):
 async def sabnzbd_api(request: Request):
     params = dict(request.query_params)
     mode = params.get("mode")
-
     nzb_name = "Unknown NZB"
     if request.method == "POST":
         try:
             form_data = await request.form()
             for key, value in form_data.items():
                 params[key] = value
-
             if "nzbfile" in form_data:
                 upload = form_data["nzbfile"]
                 if isinstance(upload, UploadFile):
@@ -124,7 +107,6 @@ async def sabnzbd_api(request: Request):
     if nzb_name == "Unknown NZB" and "name" in params:
         nzb_name = params["name"]
 
-    # Logging in die neue altmount Tabelle
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
@@ -136,17 +118,15 @@ async def sabnzbd_api(request: Request):
     except Exception as e:
         print(f"API DB Log Error: {e}")
 
-    if mode == "addfile" or mode == "addurl":
+    if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
-
     return JSONResponse({"status": True, "version": "3.0.0"})
 
 
-# --- CORE FUNKTION: TORBOX DATEN MANAGEMENT ---
+# --- CORE FUNKTION: TORBOX DATEN ---
 async def refresh_torbox_data(force_api: bool = False):
     global torbox_memory_cache, last_api_fetch
     current_time = time.time()
-
     if force_api or (current_time - last_api_fetch > 15):
         try:
             async with httpx.AsyncClient() as client:
@@ -179,17 +159,6 @@ async def refresh_torbox_data(force_api: bool = False):
                         conn.commit()
                     torbox_memory_cache = new_cache
                     last_api_fetch = current_time
-                    return
-        except:
-            pass
-
-    if not torbox_memory_cache:
-        try:
-            with sqlite3.connect(DB_PATH) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("SELECT name, progress, state FROM torbox_cache")
-                torbox_memory_cache = [dict(row) for row in cursor.fetchall()]
         except:
             pass
 
@@ -217,21 +186,23 @@ async def dashboard(
 
     await refresh_torbox_data(force_api=(c_only == 1 and p_t == 1))
 
-    t_filtered = torbox_memory_cache
-    if search_t:
-        t_filtered = [
-            i for i in t_filtered if search_t.lower().strip() in i["name"].lower()
+    t_filtered = (
+        [
+            i
+            for i in torbox_memory_cache
+            if search_t.lower().strip() in i["name"].lower()
         ]
-
-    total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
+        if search_t
+        else torbox_memory_cache
+    )
     torbox_list = t_filtered[(p_t - 1) * ITEMS_PER_PAGE : p_t * ITEMS_PER_PAGE]
+    total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
 
     altmount_data, total_h = [], 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # Abfrage auf altmount Tabelle
             h_query = "SELECT * FROM altmount WHERE 1=1"
             h_params = []
             if f_active:
@@ -246,16 +217,20 @@ async def dashboard(
             h_params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
             cursor.execute(h_query, h_params)
 
-            # HIER: Extraktion des Dateinamens
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
-                full_info = log.get("info", "")
-                if "nzb=" in full_info:
-                    log["display_name"] = full_info.split("nzb=")[-1]
-                elif "/" in full_info:
-                    log["display_name"] = full_info.split("/")[-1]
-                else:
-                    log["display_name"] = full_info
+                name = log.get("info", "")
+                # VERBESSERTE EXTRAKTION:
+                if "nzb=" in name:
+                    name = name.split("nzb=")[-1]
+                elif "/" in name:
+                    name = name.split("/")[-1]
+
+                # Saubermachen von Resten wie x-nzb'} oder Anführungszeichen
+                for char in ["'", "}", "]", "x-nzb"]:
+                    name = name.replace(char, "")
+
+                log["display_name"] = name.strip()
             altmount_data = raw_rows
     except:
         pass
