@@ -422,9 +422,20 @@ async def logout():
     return response
 
 
+async def torbox_update_loop():
+    """
+    Dieser Loop sorgt dafür, dass die torbox_table (linke Seite)
+    regelmäßig mit frischen Daten von der TorBox API versorgt wird.
+    """
+    while True:
+        await fetch_torbox_to_db()
+        await asyncio.sleep(10)  # Aktualisierung alle 10 Sekunden
+
+
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(fetch_torbox_to_db())
+    # Startet den dauerhaften Hintergrund-Loop für die TorBox-Tabelle
+    asyncio.create_task(torbox_update_loop())
 
 
 if __name__ == "__main__":
