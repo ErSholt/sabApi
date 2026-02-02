@@ -29,11 +29,9 @@ PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
 
-# Sicherstellen, dass das Verzeichnis existiert
 if not os.path.exists(BLACKHOLE_DIR):
     os.makedirs(BLACKHOLE_DIR, exist_ok=True)
 
-# Globaler Cache & Lock für Performance
 torbox_memory_cache: List[Dict] = []
 last_api_fetch = 0
 cache_lock = asyncio.Lock()
@@ -71,7 +69,6 @@ def get_current_user(request: Request):
     return request.cookies.get("user")
 
 
-# --- BACKGROUND TASK FÜR TORBOX ---
 async def fetch_torbox_to_db():
     global torbox_memory_cache, last_api_fetch
     async with cache_lock:
@@ -110,36 +107,39 @@ async def fetch_torbox_to_db():
             print(f"Torbox Background Fetch Error: {e}")
 
 
-# --- SABNZBD API (FIXED BLACKHOLE COPY) ---
+# --- SABNZBD API (REPARIERTER UPLOAD & LOGGING) ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def sabnzbd_api(request: Request):
     params = dict(request.query_params)
     mode = params.get("mode")
     nzb_name = "Unknown NZB"
 
+    # 1. Namen aus den Query-Parametern holen (Radarr/Sonarr schicken oft ?name=...)
+    if "name" in params:
+        nzb_name = params["name"]
+
     if request.method == "POST":
         try:
             form_data = await request.form()
-            # NZB Datei aus dem Formular extrahieren
-            if "nzbfile" in form_data:
-                upload = form_data["nzbfile"]
-                if hasattr(upload, "filename") and upload.filename:
-                    nzb_name = upload.filename
-                    file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
+            # Falls im Formular ein 'name' Feld ist, dieses bevorzugen
+            if "name" in form_data:
+                nzb_name = str(form_data["name"])
 
-                    # Datei sicher speichern
-                    with open(file_path, "wb") as buffer:
-                        shutil.copyfileobj(upload.file, buffer)
-
-                    print(f"Blackhole: Datei erfolgreich gespeichert: {file_path}")
+            # NZB Datei speichern
+            upload = form_data.get("nzbfile")
+            if upload and hasattr(upload, "filename") and upload.filename:
+                nzb_name = upload.filename
+                file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(upload.file, buffer)
+                print(f"Blackhole: {nzb_name} gespeichert.")
+            else:
+                # Falls wir den Content manuell aus dem Body fischen müssen
+                print(f"Kein direkter File-Upload gefunden für: {nzb_name}")
         except Exception as e:
-            print(f"API Upload Error (Blackhole): {e}")
+            print(f"API Fehler: {e}")
 
-    # Fallback Name für das Logging
-    if nzb_name == "Unknown NZB" and "name" in params:
-        nzb_name = params["name"]
-
-    # In History loggen (immer noch 'history' Tabelle)
+    # Logging in die DB
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
@@ -148,7 +148,7 @@ async def sabnzbd_api(request: Request):
             )
             conn.commit()
     except Exception as e:
-        print(f"DB Logging Error: {e}")
+        print(f"DB Log Fehler: {e}")
 
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
@@ -206,6 +206,7 @@ async def dashboard(
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
                 info = log.get("info", "")
+                # Starker Filter für Display Name
                 f_match = re.search(r"filename='([^']+)'", info)
                 name = (
                     f_match.group(1)
