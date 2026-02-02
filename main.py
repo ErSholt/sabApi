@@ -20,34 +20,52 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional, Any, List, Dict
 
+
 # --- KONFIGURATION ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
-
-# Datenbank-Pfad korrigiert: Nutzt DATABASE_DIR oder weicht auf /app/config aus
-# Damit die DB permanent bleibt, sollte sie im gemappten /config Ordner liegen
-DATABASE_DIR = str(os.getenv("DATABASE_DIR", "/app/config"))
+DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
 DB_PATH = os.path.join(DATABASE_DIR, "proxy_altmount.db")
-
-# Dein funktionierendes Mapping
 BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "/blackhole"))
-
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
 
 # Startup Logging
 print("\n" + "=" * 60)
-print("PROXY STARTUP - STATUS")
+print("PROXY STARTUP - KONFIGURATION")
 print("=" * 60)
-print(f"DB_PATH:       {DB_PATH}")
+print(f"DATABASE_DIR: {DATABASE_DIR}")
+print(f"DB_PATH: {DB_PATH}")
 print(f"BLACKHOLE_DIR: {BLACKHOLE_DIR}")
+print(f"PROXY_USER: {PROXY_USER}")
+print(
+    f"TORBOX_API_KEY: {'***' + TORBOX_API_KEY[-10:] if len(TORBOX_API_KEY) > 10 else 'NOT SET'}"
+)
 print("=" * 60 + "\n")
 
-# Verzeichnisse sicherstellen
-os.makedirs(DATABASE_DIR, exist_ok=True)
-os.makedirs(BLACKHOLE_DIR, exist_ok=True)
+# Erstelle Blackhole-Verzeichnis
+if not os.path.exists(BLACKHOLE_DIR):
+    os.makedirs(BLACKHOLE_DIR, exist_ok=True)
+    print(f"[STARTUP] Blackhole-Verzeichnis erstellt: {BLACKHOLE_DIR}")
+else:
+    print(f"[STARTUP] Blackhole-Verzeichnis existiert: {BLACKHOLE_DIR}")
+
+# Ueberpruefe Schreibrechte
+try:
+    test_file = os.path.join(BLACKHOLE_DIR, ".write_test")
+    with open(test_file, "w") as f:
+        f.write("test")
+    os.remove(test_file)
+    print(f"[STARTUP] Schreibrechte OK: {BLACKHOLE_DIR}")
+except Exception as e:
+    print(f"[STARTUP ERROR] Keine Schreibrechte in {BLACKHOLE_DIR}: {e}")
+
+print(f"[STARTUP] Absolute Pfad: {os.path.abspath(BLACKHOLE_DIR)}")
+print()
+
 
 torbox_memory_cache: List[Dict] = []
+last_api_fetch = 0
 cache_lock = asyncio.Lock()
 
 app = FastAPI()
@@ -55,29 +73,25 @@ templates = Jinja2Templates(directory="templates")
 
 
 def init_db():
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    info TEXT, time TEXT, mode TEXT, status TEXT
-                )
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                info TEXT, time TEXT, mode TEXT, status TEXT
             )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS torbox_cache (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT, progress REAL, state TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
+        """
+        )
+        cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS torbox_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT, progress REAL, state TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-            conn.commit()
-        print(f"[DB] Initialisierung erfolgreich: {DB_PATH}")
-    except Exception as e:
-        print(f"[DB ERROR] Initialisierung fehlgeschlagen: {e}")
+        """
+        )
+        conn.commit()
 
 
 init_db()
@@ -88,16 +102,14 @@ def get_current_user(request: Request):
 
 
 async def fetch_torbox_to_db():
-    global torbox_memory_cache
-    if not TORBOX_API_KEY:
-        return
+    global torbox_memory_cache, last_api_fetch
     async with cache_lock:
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
                     "https://api.torbox.app/v1/api/usenet/mylist",
                     headers={"Authorization": f"Bearer {TORBOX_API_KEY}"},
-                    timeout=8.0,
+                    timeout=5.0,
                 )
                 if resp.status_code == 200:
                     api_data = resp.json().get("data", [])
@@ -122,79 +134,147 @@ async def fetch_torbox_to_db():
                             )
                         conn.commit()
                     torbox_memory_cache = new_cache
-        except Exception as e:
-            print(f"[TORBOX API ERROR] {e}")
+                    last_api_fetch = time.time()
+                else:
+                    torbox_memory_cache = []  # Leeren wenn API Fehler
+        except Exception:
+            torbox_memory_cache = []  # Leeren wenn API nicht erreichbar
 
 
-# --- SABNZBD API (HISTORY FIX) ---
+# --- SABNZBD API (FORCE COPY & CLEAN NAME) ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def sabnzbd_api(request: Request):
+    print(f"\n{'='*60}")
+    print(f"[API] Neue Anfrage: {request.method}")
+
     params = dict(request.query_params)
     mode = params.get("mode")
     final_name = "Unknown NZB"
-    nzb_content = None
+
+    print(f"[API] Query Params: {params}")
+    print(f"[API] Mode: {mode}")
 
     if request.method == "POST":
         try:
             form_data = await request.form()
-            upload_obj = None
-            filename_candidate = None
+            print(f"[API] Form Keys: {list(form_data.keys())}")
 
-            for key, val in form_data.items():
-                if isinstance(val, UploadFile):
-                    upload_obj = val
-                    if key == "name":
-                        filename_candidate = val.filename
-                    break
-
-            if upload_obj:
-                if not filename_candidate:
-                    filename_candidate = upload_obj.filename
-                await upload_obj.seek(0)
-                nzb_content = await upload_obj.read()
-
-            elif "nzbfile" in form_data:
-                possible_content = form_data["nzbfile"]
-                if isinstance(possible_content, (str, bytes)):
-                    nzb_content = (
-                        possible_content
-                        if isinstance(possible_content, bytes)
-                        else possible_content.encode("utf-8")
+            # Debug: Zeige alle Form-Felder
+            for key in form_data:
+                value = form_data[key]
+                # Prüfe auf UploadFile-Attribute statt isinstance
+                if hasattr(value, "filename") and hasattr(value, "read"):
+                    print(
+                        f"[API] Field '{key}': UploadFile(filename='{value.filename}', size={getattr(value, 'size', 'unknown')})"
                     )
+                else:
+                    print(f"[API] Field '{key}': {type(value).__name__} = '{value}'")
 
-            if (
-                "name" in form_data
-                and isinstance(form_data["name"], str)
-                and not filename_candidate
-            ):
-                filename_candidate = form_data["name"]
+            # Suche nach Upload-Datei - prüfe gängige Feldnamen
+            upload_obj = None
+            for field_name in ["nzbfile", "file", "name", "nzb"]:
+                if field_name in form_data:
+                    value = form_data[field_name]
+                    # Prüfe auf UploadFile-Attribute statt isinstance
+                    if hasattr(value, "filename") and hasattr(value, "read"):
+                        upload_obj = value
+                        print(f"[API] Upload gefunden in Feld: '{field_name}'")
+                        break
 
-            if filename_candidate:
-                final_name = os.path.basename(
-                    str(filename_candidate).strip().replace('"', "").replace("'", "")
-                )
+            # Fallback: Suche in allen Feldern
+            if not upload_obj:
+                for key in form_data:
+                    value = form_data[key]
+                    # Prüfe auf UploadFile-Attribute statt isinstance
+                    if hasattr(value, "filename") and hasattr(value, "read"):
+                        upload_obj = value
+                        print(f"[API] Upload gefunden in Feld: '{key}'")
+                        break
+
+            if upload_obj and hasattr(upload_obj, "filename") and upload_obj.filename:
+                raw_filename = upload_obj.filename
+                print(f"[API] Roher Filename: '{raw_filename}'")
+
+                # Bereinigung des Dateinamens
+                final_name = raw_filename.strip()
+                final_name = re.sub(r'["\']', "", final_name)
+
                 if not final_name.lower().endswith(".nzb"):
                     final_name += ".nzb"
 
-            # Speichervorgang
-            if nzb_content and len(nzb_content) > 0:
+                print(f"[API] Bereinigter Filename: '{final_name}'")
+
+                # Kopiere Datei ins Blackhole-Verzeichnis
                 file_path = os.path.join(BLACKHOLE_DIR, final_name)
-                with open(file_path, "wb") as f:
-                    f.write(nzb_content)
-                os.chmod(file_path, 0o666)
-                print(f"[API] Datei kopiert: {final_name}")
+                print(f"[API] Ziel-Pfad: {file_path}")
+                print(f"[API] Blackhole-Dir existiert: {os.path.exists(BLACKHOLE_DIR)}")
+
+                try:
+                    await upload_obj.seek(0)
+                    content = await upload_obj.read()
+                    print(f"[API] Gelesene Bytes: {len(content)}")
+
+                    with open(file_path, "wb") as buffer:
+                        buffer.write(content)
+
+                    # Überprüfe ob Datei existiert
+                    if os.path.exists(file_path):
+                        file_size = os.path.getsize(file_path)
+                        print(f"[OK] NZB erfolgreich kopiert!")
+                        print(f"[OK] Dateigröße: {file_size} Bytes")
+                        print(f"[OK] Pfad: {file_path}")
+                    else:
+                        print(f"[ERROR] Datei wurde NICHT erstellt!")
+
+                except Exception as copy_error:
+                    print(f"[ERROR] Kopierfehler: {copy_error}")
+                    import traceback
+
+                    traceback.print_exc()
+            else:
+                print(f"[WARN] Kein UploadFile gefunden!")
+
+                # Versuche filename aus 'name' Feld zu extrahieren (falls String)
+                if "name" in form_data:
+                    name_value = form_data["name"]
+                    print(f"[API] 'name' Feld Typ: {type(name_value)}")
+                    print(f"[API] 'name' Feld Wert: {name_value}")
+
+                    # Wenn es ein String ist, extrahiere den Filename
+                    if isinstance(name_value, str):
+                        # Suche nach filename= Pattern
+                        match = re.search(r'filename=["\']([^"\']+)["\']', name_value)
+                        if match:
+                            final_name = match.group(1).strip()
+                            print(
+                                f"[API] Filename aus String extrahiert: '{final_name}'"
+                            )
+                        else:
+                            final_name = name_value.strip()
+
+                # Bereinigung
+                final_name = re.sub(r'["\']', "", final_name)
+                if final_name and not final_name.lower().endswith(".nzb"):
+                    final_name += ".nzb"
+
+                print(f"[WARN] Verwende Name: '{final_name}'")
 
         except Exception as e:
-            print(f"[API ERROR] POST Verarbeitung: {e}")
+            print(f"[ERROR] API POST Fehler: {e}")
+            import traceback
+
+            traceback.print_exc()
 
     elif request.method == "GET":
         if "name" in params:
-            final_name = os.path.basename(
-                params["name"].strip().replace('"', "").replace("'", "")
-            )
+            final_name = str(params["name"]).strip()
+            final_name = re.sub(r'["\']', "", final_name)
+            if not final_name.lower().endswith(".nzb"):
+                final_name += ".nzb"
+            print(f"[API] GET Request mit name: '{final_name}'")
 
-    # --- WICHTIG: DB LOGGING ---
-    # Wir loggen JEDEN Request, damit wir sehen ob überhaupt was ankommt
+    # Logging in die Datenbank
+    print(f"[DB] Speichere in History: '{final_name}'")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
@@ -202,12 +282,16 @@ async def sabnzbd_api(request: Request):
                 (final_name, str(mode), "200"),
             )
             conn.commit()
-            print(f"[DB] History Eintrag erstellt: {final_name}")
-    except Exception as e:
-        print(f"[DB ERROR] History Log fehlgeschlagen: {e}")
+        print(f"[DB] Erfolgreich gespeichert")
+    except Exception as db_error:
+        print(f"[ERROR] DB Fehler: {db_error}")
 
+    print(f"{'='*60}\n")
+
+    # Response je nach Mode
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
+
     return JSONResponse({"status": True, "version": "3.0.0"})
 
 
@@ -217,7 +301,7 @@ async def dashboard(
     request: Request,
     page_t: int = 1,
     page_h: int = 1,
-    filter_active: int = 1,  # Standardmaessig an
+    filter_active: int = 1,
     search_t: str = "",
     search_h: str = "",
     content_only: int = 0,
@@ -226,7 +310,7 @@ async def dashboard(
     if not username:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    # Torbox Daten
+    # Torbox Tabelle (wird nur gefüllt wenn API Daten liefert)
     t_filtered = (
         [
             i
@@ -239,39 +323,33 @@ async def dashboard(
     total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
     torbox_list = t_filtered[(page_t - 1) * ITEMS_PER_PAGE : page_t * ITEMS_PER_PAGE]
 
-    # Altmount Daten (History)
+    # Altmount Tabelle
     altmount_data, total_h = [], 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-
-            # Basis-Query
             h_query = "SELECT * FROM history WHERE 1=1"
             h_params = []
-
-            # WICHTIG: Wenn filter_active=1, zeigen wir nur die tatsächlichen Uploads
-            # Falls die Tabelle leer bleibt, schalte den Filter im Dashboard mal aus!
-            if filter_active == 1:
+            if filter_active:
                 h_query += " AND mode IN ('addfile', 'addurl')"
-
             if search_h:
                 h_query += " AND info LIKE ?"
                 h_params.append(f"%{search_h.strip()}%")
 
             cursor.execute(f"SELECT COUNT(*) FROM ({h_query})", h_params)
             total_h = cursor.fetchone()[0]
-
             cursor.execute(
                 f"{h_query} ORDER BY id DESC LIMIT ? OFFSET ?",
                 (*h_params, ITEMS_PER_PAGE, (page_h - 1) * ITEMS_PER_PAGE),
             )
+
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
                 log["display_name"] = log.get("info", "Unknown NZB")
             altmount_data = raw_rows
-    except Exception as e:
-        print(f"[DASHBOARD ERROR] DB Abfrage: {e}")
+    except:
+        pass
 
     total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
 
@@ -312,6 +390,7 @@ async def dashboard(
     )
 
 
+# --- LOGIN / LOGOUT ---
 @app.api_route("/login", methods=["GET", "POST"], response_class=HTMLResponse)
 async def login(request: Request):
     if request.method == "POST":
@@ -343,16 +422,9 @@ async def logout():
     return response
 
 
-# Hintergrund-Task fuer Torbox (alle 30 Sek)
-async def update_cache_loop():
-    while True:
-        await fetch_torbox_to_db()
-        await asyncio.sleep(30)
-
-
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(update_cache_loop())
+    asyncio.create_task(fetch_torbox_to_db())
 
 
 if __name__ == "__main__":
