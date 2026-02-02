@@ -9,7 +9,7 @@ from fastapi import (
     Request,
     Depends,
     Form,
-    HTTPException,
+    HTMLElement,
     status,
     UploadFile,
     File,
@@ -21,7 +21,7 @@ from typing import Optional, Any, List, Dict
 # --- KONFIGURATION AUS DOCKER-UMGEBUNGSVARIABLEN ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
-DB_PATH = os.path.join(DATABASE_DIR, "proxy_history.db")
+DB_PATH = os.path.join(DATABASE_DIR, "proxy_altmount.db")
 BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "./blackhole"))
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
@@ -42,10 +42,10 @@ templates = Jinja2Templates(directory="templates")
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # History Tabelle (für das Dashboard)
+        # Altmount Tabelle
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS history (
+            CREATE TABLE IF NOT EXISTS altmount (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 info TEXT,
                 time TEXT,
@@ -96,7 +96,6 @@ async def sabnzbd_api(request: Request):
                 if isinstance(upload, UploadFile):
                     nzb_name = upload.filename
                     content = await upload.read()
-                    # Speichern im Blackhole (optional, falls benötigt)
                     file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
                     with open(file_path, "wb") as f:
                         f.write(content)
@@ -107,12 +106,12 @@ async def sabnzbd_api(request: Request):
     if nzb_name == "Unknown NZB" and "name" in params:
         nzb_name = params["name"]
 
-    # 1. Logging in die Datenbank für das Dashboard
+    # 1. Logging in die Datenbank für das Dashboard (Altmount)
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
+                "INSERT INTO altmount (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
                 (str(nzb_name), str(mode), "200"),
             )
             conn.commit()
@@ -211,12 +210,12 @@ async def dashboard(
     total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
     torbox_list = t_filtered[(p_t - 1) * ITEMS_PER_PAGE : p_t * ITEMS_PER_PAGE]
 
-    history_data, total_h = [], 0
+    altmount_data, total_h = [], 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            h_query = "SELECT * FROM history WHERE 1=1"
+            h_query = "SELECT * FROM altmount WHERE 1=1"
             h_params = []
             if f_active:
                 h_query += " AND mode IN ('addfile', 'addurl')"
@@ -229,7 +228,18 @@ async def dashboard(
             h_query += " ORDER BY id DESC LIMIT ? OFFSET ?"
             h_params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
             cursor.execute(h_query, h_params)
-            history_data = [dict(row) for row in cursor.fetchall()]
+
+            # Dateinamen-Extraktion hinzufügen
+            raw_rows = [dict(row) for row in cursor.fetchall()]
+            for log in raw_rows:
+                full_info = log.get("info", "")
+                if "nzb=" in full_info:
+                    log["display_name"] = full_info.split("nzb=")[-1]
+                elif "/" in full_info:
+                    log["display_name"] = full_info.split("/")[-1]
+                else:
+                    log["display_name"] = full_info
+            altmount_data = raw_rows
     except:
         pass
 
@@ -248,7 +258,7 @@ async def dashboard(
                 ),
                 "history_html": templates.get_template("altmount_table.html").render(
                     {
-                        "request_log": history_data,
+                        "request_log": altmount_data,
                         "page_h": p_h,
                         "total_h_pages": total_h_pages,
                     }
@@ -262,7 +272,7 @@ async def dashboard(
         {
             "request": request,
             "torbox_downloads": torbox_list,
-            "request_log": history_data,
+            "request_log": altmount_data,
             "page_t": p_t,
             "total_t_pages": total_t_pages,
             "page_h": p_h,
