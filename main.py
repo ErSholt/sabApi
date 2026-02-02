@@ -20,6 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional, Any, List, Dict
 
+
 # --- KONFIGURATION ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
@@ -29,8 +30,37 @@ PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
 
+# Startup Logging
+print("\n" + "="*60)
+print("PROXY STARTUP - KONFIGURATION")
+print("="*60)
+print(f"DATABASE_DIR: {DATABASE_DIR}")
+print(f"DB_PATH: {DB_PATH}")
+print(f"BLACKHOLE_DIR: {BLACKHOLE_DIR}")
+print(f"PROXY_USER: {PROXY_USER}")
+print(f"TORBOX_API_KEY: {'***' + TORBOX_API_KEY[-10:] if len(TORBOX_API_KEY) > 10 else 'NOT SET'}")
+print("="*60 + "\n")
+
+# Erstelle Blackhole-Verzeichnis
 if not os.path.exists(BLACKHOLE_DIR):
     os.makedirs(BLACKHOLE_DIR, exist_ok=True)
+    print(f"[STARTUP] Blackhole-Verzeichnis erstellt: {BLACKHOLE_DIR}")
+else:
+    print(f"[STARTUP] Blackhole-Verzeichnis existiert: {BLACKHOLE_DIR}")
+
+# Ueberpruefe Schreibrechte
+try:
+    test_file = os.path.join(BLACKHOLE_DIR, ".write_test")
+    with open(test_file, "w") as f:
+        f.write("test")
+    os.remove(test_file)
+    print(f"[STARTUP] Schreibrechte OK: {BLACKHOLE_DIR}")
+except Exception as e:
+    print(f"[STARTUP ERROR] Keine Schreibrechte in {BLACKHOLE_DIR}: {e}")
+
+print(f"[STARTUP] Absolute Pfad: {os.path.abspath(BLACKHOLE_DIR)}")
+print()
+
 
 torbox_memory_cache: List[Dict] = []
 last_api_fetch = 0
@@ -112,79 +142,128 @@ async def fetch_torbox_to_db():
 # --- SABNZBD API (FORCE COPY & CLEAN NAME) ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def sabnzbd_api(request: Request):
+    print(f"\n{'='*60}")
+    print(f"[API] Neue Anfrage: {request.method}")
+    
     params = dict(request.query_params)
     mode = params.get("mode")
     final_name = "Unknown NZB"
+    
+    print(f"[API] Query Params: {params}")
+    print(f"[API] Mode: {mode}")
 
     if request.method == "POST":
         try:
             form_data = await request.form()
-            upload_obj = None
-
-            # Suche nach Upload-Datei in allen Form-Feldern
+            print(f"[API] Form Keys: {list(form_data.keys())}")
+            
+            # Debug: Zeige alle Form-Felder
             for key in form_data:
                 value = form_data[key]
                 if isinstance(value, UploadFile):
-                    upload_obj = value
-                    break
+                    print(f"[API] Field '{key}': UploadFile(filename='{value.filename}', size={value.size})")
+                else:
+                    print(f"[API] Field '{key}': {type(value).__name__} = '{value}'")
+            
+            # Suche nach Upload-Datei - prüfe gängige Feldnamen
+            upload_obj = None
+            for field_name in ['nzbfile', 'file', 'name', 'nzb']:
+                if field_name in form_data:
+                    value = form_data[field_name]
+                    if isinstance(value, UploadFile):
+                        upload_obj = value
+                        print(f"[API] Upload gefunden in Feld: '{field_name}'")
+                        break
+            
+            # Fallback: Suche in allen Feldern
+            if not upload_obj:
+                for key in form_data:
+                    value = form_data[key]
+                    if isinstance(value, UploadFile):
+                        upload_obj = value
+                        print(f"[API] Upload gefunden in Feld: '{key}'")
+                        break
 
-            if upload_obj and upload_obj.filename:
-                # Dateiname aus dem UploadFile-Objekt extrahieren
+            if upload_obj and hasattr(upload_obj, 'filename') and upload_obj.filename:
                 raw_filename = upload_obj.filename
+                print(f"[API] Roher Filename: '{raw_filename}'")
                 
                 # Bereinigung des Dateinamens
                 final_name = raw_filename.strip()
-                
-                # Entferne Anfuehrungszeichen und andere Zeichen
                 final_name = re.sub(r'["\']', "", final_name)
                 
-                # Stelle sicher, dass .nzb Extension vorhanden ist
                 if not final_name.lower().endswith(".nzb"):
                     final_name += ".nzb"
+                
+                print(f"[API] Bereinigter Filename: '{final_name}'")
 
                 # Kopiere Datei ins Blackhole-Verzeichnis
                 file_path = os.path.join(BLACKHOLE_DIR, final_name)
+                print(f"[API] Ziel-Pfad: {file_path}")
+                print(f"[API] Blackhole-Dir existiert: {os.path.exists(BLACKHOLE_DIR)}")
+                
                 try:
-                    # Setze File-Pointer zurueck falls schon gelesen
                     await upload_obj.seek(0)
+                    content = await upload_obj.read()
+                    print(f"[API] Gelesene Bytes: {len(content)}")
                     
                     with open(file_path, "wb") as buffer:
-                        content = await upload_obj.read()
                         buffer.write(content)
                     
-                    print(f"[OK] NZB kopiert: {final_name} -> {file_path}")
+                    # Überprüfe ob Datei existiert
+                    if os.path.exists(file_path):
+                        file_size = os.path.getsize(file_path)
+                        print(f"[OK] NZB erfolgreich kopiert!")
+                        print(f"[OK] Dateigröße: {file_size} Bytes")
+                        print(f"[OK] Pfad: {file_path}")
+                    else:
+                        print(f"[ERROR] Datei wurde NICHT erstellt!")
+                        
                 except Exception as copy_error:
                     print(f"[ERROR] Kopierfehler: {copy_error}")
+                    import traceback
+                    traceback.print_exc()
             else:
-                # Fallback: Versuche Name aus Form-Daten oder Query-Parameter
-                name_from_form = form_data.get("name")
-                name_from_query = params.get("name")
+                print(f"[WARN] Kein UploadFile gefunden!")
                 
-                if name_from_form:
-                    final_name = str(name_from_form).strip()
-                elif name_from_query:
-                    final_name = str(name_from_query).strip()
+                # Versuche filename aus 'name' Feld zu extrahieren (falls String)
+                if 'name' in form_data:
+                    name_value = form_data['name']
+                    print(f"[API] 'name' Feld Typ: {type(name_value)}")
+                    print(f"[API] 'name' Feld Wert: {name_value}")
+                    
+                    # Wenn es ein String ist, extrahiere den Filename
+                    if isinstance(name_value, str):
+                        # Suche nach filename= Pattern
+                        match = re.search(r'filename=["\']([^"\']+)["\']', name_value)
+                        if match:
+                            final_name = match.group(1).strip()
+                            print(f"[API] Filename aus String extrahiert: '{final_name}'")
+                        else:
+                            final_name = name_value.strip()
                 
                 # Bereinigung
                 final_name = re.sub(r'["\']', "", final_name)
                 if final_name and not final_name.lower().endswith(".nzb"):
                     final_name += ".nzb"
                 
-                print(f"[WARN] Keine Datei hochgeladen, nur Name: {final_name}")
+                print(f"[WARN] Verwende Name: '{final_name}'")
 
         except Exception as e:
             print(f"[ERROR] API POST Fehler: {e}")
             import traceback
             traceback.print_exc()
 
-    # GET Request Fallback
-    elif request.method == "GET" and "name" in params:
-        final_name = str(params["name"]).strip()
-        final_name = re.sub(r'["\']', "", final_name)
-        if not final_name.lower().endswith(".nzb"):
-            final_name += ".nzb"
+    elif request.method == "GET":
+        if "name" in params:
+            final_name = str(params["name"]).strip()
+            final_name = re.sub(r'["\']', "", final_name)
+            if not final_name.lower().endswith(".nzb"):
+                final_name += ".nzb"
+            print(f"[API] GET Request mit name: '{final_name}'")
 
     # Logging in die Datenbank
+    print(f"[DB] Speichere in History: '{final_name}'")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
@@ -192,9 +271,12 @@ async def sabnzbd_api(request: Request):
                 (final_name, str(mode), "200"),
             )
             conn.commit()
+        print(f"[DB] Erfolgreich gespeichert")
     except Exception as db_error:
         print(f"[ERROR] DB Fehler: {db_error}")
 
+    print(f"{'='*60}\n")
+    
     # Response je nach Mode
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
