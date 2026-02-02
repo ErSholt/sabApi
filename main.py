@@ -25,7 +25,7 @@ from typing import Optional, Any, List, Dict
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
 DB_PATH = os.path.join(DATABASE_DIR, "proxy_altmount.db")
-BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "./blackhole"))
+BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "/blackhole"))
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
