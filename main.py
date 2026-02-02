@@ -5,6 +5,7 @@ import asyncio
 import os
 import time
 import re
+import shutil
 from fastapi import (
     FastAPI,
     Request,
@@ -28,7 +29,9 @@ PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
 
-os.makedirs(BLACKHOLE_DIR, exist_ok=True)
+# Sicherstellen, dass das Verzeichnis existiert
+if not os.path.exists(BLACKHOLE_DIR):
+    os.makedirs(BLACKHOLE_DIR, exist_ok=True)
 
 # Globaler Cache & Lock für Performance
 torbox_memory_cache: List[Dict] = []
@@ -68,7 +71,7 @@ def get_current_user(request: Request):
     return request.cookies.get("user")
 
 
-# --- BACKGROUND TASK FÜR TORBOX (Hält das Dashboard schnell) ---
+# --- BACKGROUND TASK FÜR TORBOX ---
 async def fetch_torbox_to_db():
     global torbox_memory_cache, last_api_fetch
     async with cache_lock:
@@ -107,41 +110,52 @@ async def fetch_torbox_to_db():
             print(f"Torbox Background Fetch Error: {e}")
 
 
-# --- SABNZBD API ---
+# --- SABNZBD API (FIXED BLACKHOLE COPY) ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def sabnzbd_api(request: Request):
     params = dict(request.query_params)
     mode = params.get("mode")
     nzb_name = "Unknown NZB"
+
     if request.method == "POST":
         try:
             form_data = await request.form()
+            # NZB Datei aus dem Formular extrahieren
             if "nzbfile" in form_data:
                 upload = form_data["nzbfile"]
-                if isinstance(upload, UploadFile):
+                if hasattr(upload, "filename") and upload.filename:
                     nzb_name = upload.filename
-                    content = await upload.read()
-                    with open(os.path.join(BLACKHOLE_DIR, nzb_name), "wb") as f:
-                        f.write(content)
-        except:
-            pass
+                    file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
 
+                    # Datei sicher speichern
+                    with open(file_path, "wb") as buffer:
+                        shutil.copyfileobj(upload.file, buffer)
+
+                    print(f"Blackhole: Datei erfolgreich gespeichert: {file_path}")
+        except Exception as e:
+            print(f"API Upload Error (Blackhole): {e}")
+
+    # Fallback Name für das Logging
     if nzb_name == "Unknown NZB" and "name" in params:
         nzb_name = params["name"]
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
-            (str(nzb_name), str(mode), "200"),
-        )
-        conn.commit()
+    # In History loggen (immer noch 'history' Tabelle)
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
+                (str(nzb_name), str(mode), "200"),
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"DB Logging Error: {e}")
 
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
     return JSONResponse({"status": True, "version": "3.0.0"})
 
 
-# --- DASHBOARD ROUTE (OPTIMIERT) ---
+# --- DASHBOARD ROUTE ---
 @app.api_route("/", methods=["GET", "POST"], response_class=HTMLResponse)
 async def dashboard(
     request: Request,
@@ -156,7 +170,6 @@ async def dashboard(
     if not username:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    # Torbox Daten aus RAM-Cache
     t_filtered = (
         [
             i
@@ -169,7 +182,6 @@ async def dashboard(
     total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
     torbox_list = t_filtered[(page_t - 1) * ITEMS_PER_PAGE : page_t * ITEMS_PER_PAGE]
 
-    # History Daten aus DB
     altmount_data, total_h = [], 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -287,7 +299,6 @@ async def logout():
     return response
 
 
-# Start-Up Task: Füllt den Cache beim Start
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(fetch_torbox_to_db())
