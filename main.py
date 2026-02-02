@@ -39,23 +39,43 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
-# --- DATABASE INITIALISIERUNG ---
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # Tabelle umbenannt von history -> altmount
+
+        # 1. Prüfen, ob die alte 'history' Tabelle existiert
         cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS altmount (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                info TEXT,
-                time TEXT,
-                mode TEXT,
-                status TEXT
-            )
-        """
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='history'"
         )
-        # Cache Tabelle (für Torbox Daten)
+        old_table_exists = cursor.fetchone()
+
+        # 2. Prüfen, ob die neue 'altmount' Tabelle schon existiert
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='altmount'"
+        )
+        new_table_exists = cursor.fetchone()
+
+        if old_table_exists and not new_table_exists:
+            # Benenne die Tabelle um
+            cursor.execute("ALTER TABLE history RENAME TO altmount")
+            print(
+                "Datenbank: Tabelle 'history' wurde erfolgreich in 'altmount' umbenannt."
+            )
+        else:
+            # Falls gar nichts da ist (Neuinstallation), erstelle die Tabelle direkt als 'altmount'
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS altmount (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    info TEXT,
+                    time TEXT,
+                    mode TEXT,
+                    status TEXT
+                )
+            """
+            )
+
+        # Cache Tabelle bleibt gleich
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS torbox_cache (
