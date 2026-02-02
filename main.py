@@ -4,6 +4,7 @@ import httpx
 import asyncio
 import os
 import time
+import re
 from fastapi import (
     FastAPI,
     Request,
@@ -21,7 +22,6 @@ from typing import Optional, Any, List, Dict
 # --- KONFIGURATION ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
-# Wir bleiben bei der neuen Datei, die du umbenannt hast
 DB_PATH = os.path.join(DATABASE_DIR, "proxy_altmount.db")
 BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "./blackhole"))
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
@@ -37,11 +37,11 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
-# --- DATABASE INITIALISIERUNG (TEST-VERSION) ---
+# --- DATABASE INITIALISIERUNG ---
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # Wir erstellen/nutzen hier REIN die Tabelle 'history'
+        # Wir bleiben bei 'history', wie gewünscht
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS history (
@@ -102,7 +102,6 @@ async def sabnzbd_api(request: Request):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            # Hier schreiben wir in 'history'
             cursor.execute(
                 "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
                 (str(nzb_name), str(mode), "200"),
@@ -196,7 +195,6 @@ async def dashboard(
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            # TEST: Wir fragen die Tabelle 'history' ab
             h_query = "SELECT * FROM history WHERE 1=1"
             h_params = []
             if f_active:
@@ -213,8 +211,27 @@ async def dashboard(
 
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
-                # Einfache Anzeige zur Fehlersuche
-                log["display_name"] = log.get("info", "Kein Name")
+                raw_info = log.get("info", "")
+
+                # --- INTELLIGENTE EXTRAKTION ---
+                display_name = raw_info
+
+                # 1. Falls es ein UploadFile-Objekt String ist, extrahiere filename='...'
+                file_match = re.search(r"filename='([^']+)'", raw_info)
+                if file_match:
+                    display_name = file_match.group(1)
+
+                # 2. Falls es ein Pfad oder nzb=... ist
+                elif "nzb=" in display_name:
+                    display_name = display_name.split("nzb=")[-1]
+                elif "/" in display_name:
+                    display_name = display_name.split("/")[-1]
+
+                # 3. Aufräumen von Rest-Zeichen
+                for char in ["'", "}", "]", "x-nzb", "{", '"', "Headers("]:
+                    display_name = display_name.replace(char, "")
+
+                log["display_name"] = display_name.strip()
             altmount_data = raw_rows
     except:
         pass
@@ -256,6 +273,10 @@ async def dashboard(
             "total_history": total_h,
         },
     )
+
+
+# --- LOGIN / LOGOUT ---
+# ... (Login/Logout bleibt identisch)
 
 
 # --- LOGIN / LOGOUT ---
