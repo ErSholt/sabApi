@@ -9,7 +9,7 @@ from fastapi import (
     Request,
     Depends,
     Form,
-    HTMLElement,
+    HTTPException,  # Korrigiert: hieß vorher fälschlicherweise HTMLElement
     status,
     UploadFile,
     File,
@@ -21,6 +21,7 @@ from typing import Optional, Any, List, Dict
 # --- KONFIGURATION AUS DOCKER-UMGEBUNGSVARIABLEN ---
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
+# Datenbankname angepasst auf Altmount
 DB_PATH = os.path.join(DATABASE_DIR, "proxy_altmount.db")
 BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "./blackhole"))
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
@@ -42,7 +43,7 @@ templates = Jinja2Templates(directory="templates")
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # Altmount Tabelle
+        # Tabelle umbenannt von history -> altmount
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS altmount (
@@ -76,13 +77,12 @@ def get_current_user(request: Request):
     return request.cookies.get("user")
 
 
-# --- SABNZBD API ENDPUNKT (Fix für Radarr/Sonarr) ---
+# --- SABNZBD API ENDPUNKT ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def sabnzbd_api(request: Request):
     params = dict(request.query_params)
     mode = params.get("mode")
 
-    # Datei-Handling für Radarr/Sonarr Uploads
     nzb_name = "Unknown NZB"
     if request.method == "POST":
         try:
@@ -90,7 +90,6 @@ async def sabnzbd_api(request: Request):
             for key, value in form_data.items():
                 params[key] = value
 
-            # Falls eine Datei hochgeladen wird (nzbfile ist Standard bei SAB)
             if "nzbfile" in form_data:
                 upload = form_data["nzbfile"]
                 if isinstance(upload, UploadFile):
@@ -102,11 +101,10 @@ async def sabnzbd_api(request: Request):
         except Exception as e:
             print(f"API Upload Error: {e}")
 
-    # Fallback Name aus URL Params
     if nzb_name == "Unknown NZB" and "name" in params:
         nzb_name = params["name"]
 
-    # 1. Logging in die Datenbank für das Dashboard (Altmount)
+    # Logging in die neue altmount Tabelle
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
@@ -118,11 +116,9 @@ async def sabnzbd_api(request: Request):
     except Exception as e:
         print(f"API DB Log Error: {e}")
 
-    # 2. Response an Radarr/Sonarr (SABnzbd Format)
     if mode == "addfile" or mode == "addurl":
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
 
-    # Standard-Check für "Test Connection"
     return JSONResponse({"status": True, "version": "3.0.0"})
 
 
@@ -215,6 +211,7 @@ async def dashboard(
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            # Abfrage auf altmount Tabelle
             h_query = "SELECT * FROM altmount WHERE 1=1"
             h_params = []
             if f_active:
@@ -229,7 +226,7 @@ async def dashboard(
             h_params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
             cursor.execute(h_query, h_params)
 
-            # Dateinamen-Extraktion hinzufügen
+            # HIER: Extraktion des Dateinamens
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
                 full_info = log.get("info", "")
