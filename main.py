@@ -107,44 +107,56 @@ async def fetch_torbox_to_db():
             print(f"Torbox Background Fetch Error: {e}")
 
 
-# --- SABNZBD API (REPARIERTER UPLOAD & LOGGING) ---
+# --- SABNZBD API (FIX FÜR RADARR UPLOAD STRUKTUR) ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def sabnzbd_api(request: Request):
     params = dict(request.query_params)
     mode = params.get("mode")
     nzb_name = "Unknown NZB"
-
-    # 1. Namen aus den Query-Parametern holen (Radarr/Sonarr schicken oft ?name=...)
-    if "name" in params:
-        nzb_name = params["name"]
+    final_upload = None
 
     if request.method == "POST":
         try:
             form_data = await request.form()
-            # Falls im Formular ein 'name' Feld ist, dieses bevorzugen
-            if "name" in form_data:
-                nzb_name = str(form_data["name"])
 
-            # NZB Datei speichern
-            upload = form_data.get("nzbfile")
-            if upload and hasattr(upload, "filename") and upload.filename:
-                nzb_name = upload.filename
+            # 1. Wir prüfen alle Felder nach einem UploadFile Objekt
+            for key in form_data:
+                value = form_data[key]
+                if isinstance(value, UploadFile):
+                    final_upload = value
+                    break  # Gefunden!
+
+            # 2. Namen bestimmen
+            if final_upload and final_upload.filename:
+                nzb_name = final_upload.filename
+            elif "name" in params:
+                nzb_name = params["name"]
+
+            # 3. Datei speichern, wenn gefunden
+            if final_upload:
                 file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
                 with open(file_path, "wb") as buffer:
-                    shutil.copyfileobj(upload.file, buffer)
-                print(f"Blackhole: {nzb_name} gespeichert.")
+                    shutil.copyfileobj(final_upload.file, buffer)
+                print(f"ERFOLG: {nzb_name} im Blackhole gespeichert.")
             else:
-                # Falls wir den Content manuell aus dem Body fischen müssen
-                print(f"Kein direkter File-Upload gefunden für: {nzb_name}")
-        except Exception as e:
-            print(f"API Fehler: {e}")
+                print(f"WARNUNG: Kein Upload in POST gefunden. Mode: {mode}")
 
-    # Logging in die DB
+        except Exception as e:
+            print(f"FEHLER beim Verarbeiten des POST: {e}")
+
+    # 4. In History loggen (Säuberung für die DB)
     try:
+        clean_display_name = str(nzb_name)
+        # Falls nzb_name noch das "UploadFile(...)" String-Monster ist:
+        if "filename=" in clean_display_name:
+            match = re.search(r"filename='([^']+)'", clean_display_name)
+            if match:
+                clean_display_name = match.group(1)
+
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
-                (str(nzb_name), str(mode), "200"),
+                (clean_display_name, str(mode), "200"),
             )
             conn.commit()
     except Exception as e:
@@ -197,7 +209,6 @@ async def dashboard(
 
             cursor.execute(f"SELECT COUNT(*) FROM ({h_query})", h_params)
             total_h = cursor.fetchone()[0]
-
             cursor.execute(
                 f"{h_query} ORDER BY id DESC LIMIT ? OFFSET ?",
                 (*h_params, ITEMS_PER_PAGE, (page_h - 1) * ITEMS_PER_PAGE),
@@ -205,24 +216,9 @@ async def dashboard(
 
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
-                info = log.get("info", "")
-                # Starker Filter für Display Name
-                f_match = re.search(r"filename='([^']+)'", info)
-                name = (
-                    f_match.group(1)
-                    if f_match
-                    else info.split("nzb=")[-1].split("/")[-1]
-                )
-                for c in [
-                    "'",
-                    "}",
-                    "]",
-                    "x-nzb",
-                    "{",
-                    '"',
-                    "Headers(",
-                    "UploadFile(filename=",
-                ]:
+                # Einfacher Cleanup für die Anzeige
+                name = log.get("info", "Unknown")
+                for c in ["'", "}", "]", "{", '"', "UploadFile(filename="]:
                     name = name.replace(c, "")
                 log["display_name"] = name.strip()
             altmount_data = raw_rows
