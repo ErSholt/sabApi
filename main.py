@@ -30,26 +30,23 @@ ITEMS_PER_PAGE = 10
 
 os.makedirs(BLACKHOLE_DIR, exist_ok=True)
 
+# Globaler Cache & Lock für Performance
 torbox_memory_cache: List[Dict] = []
 last_api_fetch = 0
+cache_lock = asyncio.Lock()
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 
-# --- DATABASE INITIALISIERUNG ---
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # Wir bleiben bei 'history', wie gewünscht
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                info TEXT,
-                time TEXT,
-                mode TEXT,
-                status TEXT
+                info TEXT, time TEXT, mode TEXT, status TEXT
             )
         """
         )
@@ -57,10 +54,7 @@ def init_db():
             """
             CREATE TABLE IF NOT EXISTS torbox_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                progress REAL,
-                state TEXT,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                name TEXT, progress REAL, state TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """
         )
@@ -74,58 +68,16 @@ def get_current_user(request: Request):
     return request.cookies.get("user")
 
 
-# --- SABNZBD API ENDPUNKT ---
-@app.api_route("/api", methods=["GET", "POST"])
-async def sabnzbd_api(request: Request):
-    params = dict(request.query_params)
-    mode = params.get("mode")
-    nzb_name = "Unknown NZB"
-    if request.method == "POST":
-        try:
-            form_data = await request.form()
-            for key, value in form_data.items():
-                params[key] = value
-            if "nzbfile" in form_data:
-                upload = form_data["nzbfile"]
-                if isinstance(upload, UploadFile):
-                    nzb_name = upload.filename
-                    content = await upload.read()
-                    file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
-                    with open(file_path, "wb") as f:
-                        f.write(content)
-        except Exception as e:
-            print(f"API Upload Error: {e}")
-
-    if nzb_name == "Unknown NZB" and "name" in params:
-        nzb_name = params["name"]
-
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
-                (str(nzb_name), str(mode), "200"),
-            )
-            conn.commit()
-    except Exception as e:
-        print(f"API DB Log Error: {e}")
-
-    if mode in ["addfile", "addurl"]:
-        return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
-    return JSONResponse({"status": True, "version": "3.0.0"})
-
-
-# --- CORE FUNKTION: TORBOX DATEN ---
-async def refresh_torbox_data(force_api: bool = False):
+# --- BACKGROUND TASK FÜR TORBOX (Hält das Dashboard schnell) ---
+async def fetch_torbox_to_db():
     global torbox_memory_cache, last_api_fetch
-    current_time = time.time()
-    if force_api or (current_time - last_api_fetch > 15):
+    async with cache_lock:
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
                     "https://api.torbox.app/v1/api/usenet/mylist",
                     headers={"Authorization": f"Bearer {TORBOX_API_KEY}"},
-                    timeout=4.0,
+                    timeout=5.0,
                 )
                 if resp.status_code == 200:
                     api_data = resp.json().get("data", [])
@@ -135,49 +87,76 @@ async def refresh_torbox_data(force_api: bool = False):
                         cursor.execute("DELETE FROM torbox_cache")
                         for item in api_data:
                             name = item.get("name", "Unbekannt")
-                            progress = round(float(item.get("progress", 0)) * 100, 1)
-                            state = (
+                            prog = round(float(item.get("progress", 0)) * 100, 1)
+                            st = (
                                 item.get("download_state", "unknown")
                                 .replace("_", " ")
                                 .upper()
                             )
                             cursor.execute(
                                 "INSERT INTO torbox_cache (name, progress, state) VALUES (?, ?, ?)",
-                                (name, progress, state),
+                                (name, prog, st),
                             )
                             new_cache.append(
-                                {"name": name, "progress": progress, "state": state}
+                                {"name": name, "progress": prog, "state": st}
                             )
                         conn.commit()
                     torbox_memory_cache = new_cache
-                    last_api_fetch = current_time
+                    last_api_fetch = time.time()
+        except Exception as e:
+            print(f"Torbox Background Fetch Error: {e}")
+
+
+# --- SABNZBD API ---
+@app.api_route("/api", methods=["GET", "POST"])
+async def sabnzbd_api(request: Request):
+    params = dict(request.query_params)
+    mode = params.get("mode")
+    nzb_name = "Unknown NZB"
+    if request.method == "POST":
+        try:
+            form_data = await request.form()
+            if "nzbfile" in form_data:
+                upload = form_data["nzbfile"]
+                if isinstance(upload, UploadFile):
+                    nzb_name = upload.filename
+                    content = await upload.read()
+                    with open(os.path.join(BLACKHOLE_DIR, nzb_name), "wb") as f:
+                        f.write(content)
         except:
             pass
 
+    if nzb_name == "Unknown NZB" and "name" in params:
+        nzb_name = params["name"]
 
-# --- DASHBOARD ROUTE ---
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
+            (str(nzb_name), str(mode), "200"),
+        )
+        conn.commit()
+
+    if mode in ["addfile", "addurl"]:
+        return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
+    return JSONResponse({"status": True, "version": "3.0.0"})
+
+
+# --- DASHBOARD ROUTE (OPTIMIERT) ---
 @app.api_route("/", methods=["GET", "POST"], response_class=HTMLResponse)
 async def dashboard(
     request: Request,
-    page_t: Any = 1,
-    page_h: Any = 1,
-    filter_active: Any = 1,
+    page_t: int = 1,
+    page_h: int = 1,
+    filter_active: int = 1,
     search_t: str = "",
     search_h: str = "",
-    content_only: Any = 0,
+    content_only: int = 0,
     username: str = Depends(get_current_user),
 ):
     if not username:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    try:
-        p_t, p_h = int(str(page_t)), int(str(page_h))
-        c_only, f_active = int(str(content_only)), int(str(filter_active))
-    except:
-        p_t, p_h, c_only, f_active = 1, 1, 0, 1
-
-    await refresh_torbox_data(force_api=(c_only == 1 and p_t == 1))
-
+    # Torbox Daten aus RAM-Cache
     t_filtered = (
         [
             i
@@ -187,9 +166,10 @@ async def dashboard(
         if search_t
         else torbox_memory_cache
     )
-    torbox_list = t_filtered[(p_t - 1) * ITEMS_PER_PAGE : p_t * ITEMS_PER_PAGE]
     total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
+    torbox_list = t_filtered[(page_t - 1) * ITEMS_PER_PAGE : page_t * ITEMS_PER_PAGE]
 
+    # History Daten aus DB
     altmount_data, total_h = [], 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -197,7 +177,7 @@ async def dashboard(
             cursor = conn.cursor()
             h_query = "SELECT * FROM history WHERE 1=1"
             h_params = []
-            if f_active:
+            if filter_active:
                 h_query += " AND mode IN ('addfile', 'addurl')"
             if search_h:
                 h_query += " AND info LIKE ?"
@@ -205,54 +185,54 @@ async def dashboard(
 
             cursor.execute(f"SELECT COUNT(*) FROM ({h_query})", h_params)
             total_h = cursor.fetchone()[0]
-            h_query += " ORDER BY id DESC LIMIT ? OFFSET ?"
-            h_params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
-            cursor.execute(h_query, h_params)
+
+            cursor.execute(
+                f"{h_query} ORDER BY id DESC LIMIT ? OFFSET ?",
+                (*h_params, ITEMS_PER_PAGE, (page_h - 1) * ITEMS_PER_PAGE),
+            )
 
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
-                raw_info = log.get("info", "")
-
-                # --- INTELLIGENTE EXTRAKTION ---
-                display_name = raw_info
-
-                # 1. Falls es ein UploadFile-Objekt String ist, extrahiere filename='...'
-                file_match = re.search(r"filename='([^']+)'", raw_info)
-                if file_match:
-                    display_name = file_match.group(1)
-
-                # 2. Falls es ein Pfad oder nzb=... ist
-                elif "nzb=" in display_name:
-                    display_name = display_name.split("nzb=")[-1]
-                elif "/" in display_name:
-                    display_name = display_name.split("/")[-1]
-
-                # 3. Aufräumen von Rest-Zeichen
-                for char in ["'", "}", "]", "x-nzb", "{", '"', "Headers("]:
-                    display_name = display_name.replace(char, "")
-
-                log["display_name"] = display_name.strip()
+                info = log.get("info", "")
+                f_match = re.search(r"filename='([^']+)'", info)
+                name = (
+                    f_match.group(1)
+                    if f_match
+                    else info.split("nzb=")[-1].split("/")[-1]
+                )
+                for c in [
+                    "'",
+                    "}",
+                    "]",
+                    "x-nzb",
+                    "{",
+                    '"',
+                    "Headers(",
+                    "UploadFile(filename=",
+                ]:
+                    name = name.replace(c, "")
+                log["display_name"] = name.strip()
             altmount_data = raw_rows
     except:
         pass
 
     total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
 
-    if c_only == 1:
+    if content_only == 1:
         return JSONResponse(
             {
                 "status": "success",
                 "table_html": templates.get_template("torbox_table.html").render(
                     {
                         "torbox_downloads": torbox_list,
-                        "page_t": p_t,
+                        "page_t": page_t,
                         "total_t_pages": total_t_pages,
                     }
                 ),
                 "history_html": templates.get_template("altmount_table.html").render(
                     {
                         "request_log": altmount_data,
-                        "page_h": p_h,
+                        "page_h": page_h,
                         "total_h_pages": total_h_pages,
                     }
                 ),
@@ -266,9 +246,9 @@ async def dashboard(
             "request": request,
             "torbox_downloads": torbox_list,
             "request_log": altmount_data,
-            "page_t": p_t,
+            "page_t": page_t,
             "total_t_pages": total_t_pages,
-            "page_h": p_h,
+            "page_h": page_h,
             "total_h_pages": total_h_pages,
             "total_history": total_h,
         },
@@ -276,24 +256,27 @@ async def dashboard(
 
 
 # --- LOGIN / LOGOUT ---
-# ... (Login/Logout bleibt identisch)
-
-
-# --- LOGIN / LOGOUT ---
 @app.api_route("/login", methods=["GET", "POST"], response_class=HTMLResponse)
 async def login(request: Request):
     if request.method == "POST":
-        form_data = await request.form()
-        if (
-            str(form_data.get("username")) == PROXY_USER
-            and str(form_data.get("password")) == PROXY_PASS
-        ):
-            response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-            response.set_cookie(key="user", value=PROXY_USER)
-            return response
-        return templates.TemplateResponse(
-            "login.html", {"request": request, "error": "Ungültige Anmeldedaten"}
-        )
+        try:
+            form_data = await request.form()
+            if (
+                str(form_data.get("username")) == PROXY_USER
+                and str(form_data.get("password")) == PROXY_PASS
+            ):
+                response = RedirectResponse(
+                    url="/", status_code=status.HTTP_303_SEE_OTHER
+                )
+                response.set_cookie(key="user", value=PROXY_USER)
+                return response
+            return templates.TemplateResponse(
+                "login.html", {"request": request, "error": "Ungültige Anmeldedaten"}
+            )
+        except Exception as e:
+            return templates.TemplateResponse(
+                "login.html", {"request": request, "error": str(e)}
+            )
     return templates.TemplateResponse("login.html", {"request": request})
 
 
@@ -302,6 +285,12 @@ async def logout():
     response = RedirectResponse(url="/login")
     response.delete_cookie("user")
     return response
+
+
+# Start-Up Task: Füllt den Cache beim Start
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(fetch_torbox_to_db())
 
 
 if __name__ == "__main__":
