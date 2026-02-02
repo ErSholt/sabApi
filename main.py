@@ -104,60 +104,101 @@ async def fetch_torbox_to_db():
                     torbox_memory_cache = new_cache
                     last_api_fetch = time.time()
                 else:
-                    torbox_memory_cache = []  # API Fehler -> Tabelle leer
+                    torbox_memory_cache = []  # Leeren wenn API Fehler
         except Exception:
-            torbox_memory_cache = []
+            torbox_memory_cache = []  # Leeren wenn API nicht erreichbar
 
 
-# --- SABNZBD API (ZURÜCK AUF STABILEN STAND VON GESTERN) ---
+# --- SABNZBD API (FORCE COPY & CLEAN NAME) ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def sabnzbd_api(request: Request):
     params = dict(request.query_params)
     mode = params.get("mode")
-    nzb_name = "Unknown NZB"
+    final_name = "Unknown NZB"
 
     if request.method == "POST":
         try:
             form_data = await request.form()
-            # Wir prüfen die zwei Standard-Felder, die gestern funktionierten
-            upload = form_data.get("nzbfile") or form_data.get("name")
+            upload_obj = None
 
-            if isinstance(upload, UploadFile):
-                nzb_name = upload.filename
-                # Blackhole Kopie
-                file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
-                with open(file_path, "wb") as buffer:
-                    shutil.copyfileobj(upload.file, buffer)
-            elif upload:
-                nzb_name = str(upload)
+            # Suche nach Upload-Datei in allen Form-Feldern
+            for key in form_data:
+                value = form_data[key]
+                if isinstance(value, UploadFile):
+                    upload_obj = value
+                    break
 
-            # Säuberung falls der Name das "UploadFile"-Objekt als String enthält
-            if "filename=" in nzb_name:
-                match = re.search(r"filename=['\"]([^'\"]+)['\"]", nzb_name)
-                if match:
-                    nzb_name = match.group(1)
-            nzb_name = re.sub(r"['\"\}\{\[\]]", "", nzb_name).strip()
+            if upload_obj and upload_obj.filename:
+                # Dateiname aus dem UploadFile-Objekt extrahieren
+                raw_filename = upload_obj.filename
+                
+                # Bereinigung des Dateinamens
+                final_name = raw_filename.strip()
+                
+                # Entferne Anfuehrungszeichen und andere Zeichen
+                final_name = re.sub(r'["\']', "", final_name)
+                
+                # Stelle sicher, dass .nzb Extension vorhanden ist
+                if not final_name.lower().endswith(".nzb"):
+                    final_name += ".nzb"
+
+                # Kopiere Datei ins Blackhole-Verzeichnis
+                file_path = os.path.join(BLACKHOLE_DIR, final_name)
+                try:
+                    # Setze File-Pointer zurueck falls schon gelesen
+                    await upload_obj.seek(0)
+                    
+                    with open(file_path, "wb") as buffer:
+                        content = await upload_obj.read()
+                        buffer.write(content)
+                    
+                    print(f"[OK] NZB kopiert: {final_name} -> {file_path}")
+                except Exception as copy_error:
+                    print(f"[ERROR] Kopierfehler: {copy_error}")
+            else:
+                # Fallback: Versuche Name aus Form-Daten oder Query-Parameter
+                name_from_form = form_data.get("name")
+                name_from_query = params.get("name")
+                
+                if name_from_form:
+                    final_name = str(name_from_form).strip()
+                elif name_from_query:
+                    final_name = str(name_from_query).strip()
+                
+                # Bereinigung
+                final_name = re.sub(r'["\']', "", final_name)
+                if final_name and not final_name.lower().endswith(".nzb"):
+                    final_name += ".nzb"
+                
+                print(f"[WARN] Keine Datei hochgeladen, nur Name: {final_name}")
 
         except Exception as e:
-            print(f"API Error: {e}")
+            print(f"[ERROR] API POST Fehler: {e}")
+            import traceback
+            traceback.print_exc()
 
-    # Fallback auf Query-Parameter (für GET oder fehlende Form-Daten)
-    if (nzb_name == "Unknown NZB" or not nzb_name) and "name" in params:
-        nzb_name = params["name"]
+    # GET Request Fallback
+    elif request.method == "GET" and "name" in params:
+        final_name = str(params["name"]).strip()
+        final_name = re.sub(r'["\']', "", final_name)
+        if not final_name.lower().endswith(".nzb"):
+            final_name += ".nzb"
 
-    # Logging in die DB
+    # Logging in die Datenbank
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
-                (nzb_name, str(mode), "200"),
+                (final_name, str(mode), "200"),
             )
             conn.commit()
-    except:
-        pass
+    except Exception as db_error:
+        print(f"[ERROR] DB Fehler: {db_error}")
 
+    # Response je nach Mode
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
+    
     return JSONResponse({"status": True, "version": "3.0.0"})
 
 
@@ -176,7 +217,7 @@ async def dashboard(
     if not username:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    # Torbox Downloads
+    # Torbox Tabelle (wird nur gefüllt wenn API Daten liefert)
     t_filtered = (
         [
             i
@@ -189,7 +230,7 @@ async def dashboard(
     total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
     torbox_list = t_filtered[(page_t - 1) * ITEMS_PER_PAGE : page_t * ITEMS_PER_PAGE]
 
-    # Altmount History
+    # Altmount Tabelle
     altmount_data, total_h = [], 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -272,11 +313,11 @@ async def login(request: Request):
                 response.set_cookie(key="user", value=PROXY_USER)
                 return response
             return templates.TemplateResponse(
-                "login.html", {"request": request, "error": "Login falsch"}
+                "login.html", {"request": request, "error": "Anmeldedaten falsch"}
             )
         except:
             return templates.TemplateResponse(
-                "login.html", {"request": request, "error": "Fehler"}
+                "login.html", {"request": request, "error": "Systemfehler"}
             )
     return templates.TemplateResponse("login.html", {"request": request})
 
