@@ -1,175 +1,358 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NZB Proxy Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
-        body { background-color: #000000; color: #f3f4f6; font-family: 'Inter', sans-serif; }
-        .card { background-color: #0d0d0d; border: 1px solid #1f1f1f; display: flex; flex-direction: column; height: 650px; }
-        
-        .toggle-bg { width: 2.5rem; height: 1.25rem; background-color: #1f1f1f; border-radius: 9999px; transition: all 0.2s; position: relative; border: 1px solid #333; }
-        .toggle-dot { width: 0.85rem; height: 0.85rem; background-color: #9ca3af; border-radius: 9999px; position: absolute; top: 0.125rem; left: 0.125rem; transition: all 0.2s; }
-        input:checked + .toggle-bg { background-color: #3b82f6; border-color: #2563eb; }
-        input:checked + .toggle-bg .toggle-dot { transform: translateX(1.25rem); background-color: white; }
+      body {
+        background-color: #000000;
+        color: #f3f4f6;
+        font-family: "Inter", sans-serif;
+      }
+      .card {
+        background-color: #0d0d0d;
+        border: 1px solid #1f1f1f;
+        display: flex;
+        flex-direction: column;
+        height: 650px;
+      }
 
-        .badge-usenet { background-color: #4c1d95; color: #ede9fe; border: 1px solid #5b21b6; }
-        .badge-completed { background-color: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
-        .progress-blue { background-color: #3b82f6; box-shadow: 0 0 10px rgba(59, 130, 246, 0.3); transition: width 0.8s ease; }
+      .toggle-bg {
+        width: 2.5rem;
+        height: 1.25rem;
+        background-color: #1f1f1f;
+        border-radius: 9999px;
+        transition: all 0.2s;
+        position: relative;
+        border: 1px solid #333;
+      }
+      .toggle-dot {
+        width: 0.85rem;
+        height: 0.85rem;
+        background-color: #9ca3af;
+        border-radius: 9999px;
+        position: absolute;
+        top: 0.125rem;
+        left: 0.125rem;
+        transition: all 0.2s;
+      }
+      input:checked + .toggle-bg {
+        background-color: #3b82f6;
+        border-color: #2563eb;
+      }
+      input:checked + .toggle-bg .toggle-dot {
+        transform: translateX(1.25rem);
+        background-color: white;
+      }
 
-        .overflow-x-auto { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-        .overflow-x-auto::-webkit-scrollbar { display: none; }
+      .badge-usenet {
+        background-color: #4c1d95;
+        color: #ede9fe;
+        border: 1px solid #5b21b6;
+      }
+      .badge-completed {
+        background-color: #064e3b;
+        color: #6ee7b7;
+        border: 1px solid #065f46;
+      }
+      .progress-blue {
+        background-color: #3b82f6;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+        transition: width 0.8s ease;
+      }
 
-        .view-btn { color: #4b5563; transition: all 0.2s; }
-        .view-btn:hover { color: #9ca3af; }
-        .view-btn.active { color: #3b82f6; background-color: #1f2937; }
+      .overflow-x-auto {
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .overflow-x-auto::-webkit-scrollbar {
+        display: none;
+      }
 
-        .truncate { cursor: help; }
-        [title] { text-decoration: underline dotted #374151; }
+      .view-btn {
+        color: #4b5563;
+        transition: all 0.2s;
+      }
+      .view-btn:hover {
+        color: #9ca3af;
+      }
+      .view-btn.active {
+        color: #3b82f6;
+        background-color: #1f2937;
+      }
+
+      .truncate {
+        cursor: help;
+      }
+      [title] {
+        text-decoration: underline dotted #374151;
+      }
     </style>
-</head>
-<body class="p-4 md:p-8 text-gray-200">
-
-    <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center mb-8 gap-4">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-white">NZB <span class="text-blue-500">Proxy</span></h1>
-            <div class="flex gap-4 mt-2 text-[11px] font-medium text-gray-500 uppercase tracking-wider">
-                <span>Altmount Einträge: <span class="text-blue-400" id="total-altmount">...</span></span>
-                <span id="refresh-indicator" class="text-green-500 opacity-0 transition-opacity">● Live</span>
-            </div>
+  </head>
+  <body class="p-4 md:p-8 text-gray-200">
+    <div
+      class="max-w-7xl mx-auto flex flex-wrap justify-between items-center mb-8 gap-4"
+    >
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-white">
+          NZB <span class="text-blue-500">Proxy</span>
+        </h1>
+        <div
+          class="flex gap-4 mt-2 text-[11px] font-medium text-gray-500 uppercase tracking-wider"
+        >
+          <span
+            >Altmount Einträge:
+            <span class="text-blue-400" id="total-altmount">...</span></span
+          >
+          <span
+            id="refresh-indicator"
+            class="text-green-500 opacity-0 transition-opacity"
+            >● Live</span
+          >
         </div>
+      </div>
 
-        <div class="flex items-center gap-4">
-            <div class="hidden md:flex bg-[#0d0d0d] border border-[#1f1f1f] rounded-lg p-1 gap-1">
-                <button onclick="setViewMode('stacked')" id="btn-stacked" class="view-btn p-1.5 rounded-md" title="Untereinander">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                </button>
-                <button onclick="setViewMode('grid')" id="btn-grid" class="view-btn p-1.5 rounded-md" title="Nebeneinander">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
-                </button>
-            </div>
-            <a href="/logout" class="text-xs bg-gray-900 hover:bg-gray-800 border border-gray-800 px-4 py-2 rounded-lg transition text-gray-300 font-medium">Logout</a>
+      <div class="flex items-center gap-4">
+        <div
+          class="hidden md:flex bg-[#0d0d0d] border border-[#1f1f1f] rounded-lg p-1 gap-1"
+        >
+          <button
+            onclick="setViewMode('stacked')"
+            id="btn-stacked"
+            class="view-btn p-1.5 rounded-md"
+            title="Untereinander"
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 6h16M4 12h16M4 18h16"
+              ></path>
+            </svg>
+          </button>
+          <button
+            onclick="setViewMode('grid')"
+            id="btn-grid"
+            class="view-btn p-1.5 rounded-md"
+            title="Nebeneinander"
+          >
+            <svg
+              class="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"
+              ></path>
+            </svg>
+          </button>
         </div>
+        <a
+          href="/logout"
+          class="text-xs bg-gray-900 hover:bg-gray-800 border border-gray-800 px-4 py-2 rounded-lg transition text-gray-300 font-medium"
+          >Logout</a
+        >
+      </div>
     </div>
 
-    <div id="layout-container" class="max-w-7xl mx-auto grid grid-cols-1 gap-8 transition-all duration-300">
-        
-        <div class="card rounded-xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-800 flex flex-wrap justify-between items-center gap-4 bg-white/[0.01]">
-                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Torbox</h2>
-                <div class="relative flex-grow md:flex-grow-0 w-full md:w-auto">
-                    <input type="text" id="search-torbox" placeholder="Filter..." 
-                           class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-48"
-                           oninput="debounceSearch('t')">
-                    <svg class="w-3 h-3 text-gray-600 absolute right-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                </div>
-            </div>
-            <div id="torbox-container" class="flex-grow overflow-hidden">
-                <div class="p-10 text-center text-gray-600 animate-pulse text-xs">Lade Torbox...</div>
-            </div>
+    <div
+      id="layout-container"
+      class="max-w-7xl mx-auto grid grid-cols-1 gap-8 transition-all duration-300"
+    >
+      <div class="card rounded-xl overflow-hidden">
+        <div
+          class="px-6 py-4 border-b border-gray-800 flex flex-wrap justify-between items-center gap-4 bg-white/[0.01]"
+        >
+          <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">
+            Torbox
+          </h2>
+          <div class="relative flex-grow md:flex-grow-0 w-full md:w-auto">
+            <input
+              type="text"
+              id="search-torbox"
+              placeholder="Filter..."
+              class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-48"
+              oninput="debounceSearch('t')"
+            />
+            <svg
+              class="w-3 h-3 text-gray-600 absolute right-3 top-2.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+          </div>
         </div>
+        <div id="torbox-container" class="flex-grow overflow-hidden">
+          <div class="p-10 text-center text-gray-600 animate-pulse text-xs">
+            Lade Torbox...
+          </div>
+        </div>
+      </div>
 
-        <div class="card rounded-xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-800 flex flex-wrap justify-between items-center gap-4 bg-white/[0.01]">
-                <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Altmount</h2>
-                <div class="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
-                    <div class="relative flex-grow md:flex-grow-0 w-full md:w-auto">
-                        <input type="text" id="search-altmount" placeholder="Suche..." 
-                               class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-48"
-                               oninput="debounceSearch('h')">
-                    </div>
-                    <label class="inline-flex items-center cursor-pointer group flex-shrink-0">
-                        <div class="relative">
-                            <input type="checkbox" id="filter-toggle" class="sr-only" checked onchange="updateDashboard(true)">
-                            <div class="toggle-bg w-8 h-5"><div class="toggle-dot w-3 h-3 top-1 left-1"></div></div>
-                        </div>
-                    </label>
+      <div class="card rounded-xl overflow-hidden">
+        <div
+          class="px-6 py-4 border-b border-gray-800 flex flex-wrap justify-between items-center gap-4 bg-white/[0.01]"
+        >
+          <h2 class="text-xs font-bold text-gray-400 uppercase tracking-widest">
+            Altmount
+          </h2>
+          <div
+            class="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end"
+          >
+            <div class="relative flex-grow md:flex-grow-0 w-full md:w-auto">
+              <input
+                type="text"
+                id="search-altmount"
+                placeholder="Suche..."
+                class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-48"
+                oninput="debounceSearch('h')"
+              />
+            </div>
+            <label
+              class="inline-flex items-center cursor-pointer group flex-shrink-0"
+            >
+              <div class="relative">
+                <input
+                  type="checkbox"
+                  id="filter-toggle"
+                  class="sr-only"
+                  checked
+                  onchange="updateDashboard(true)"
+                />
+                <div class="toggle-bg w-8 h-5">
+                  <div class="toggle-dot w-3 h-3 top-1 left-1"></div>
                 </div>
-            </div>
-            <div id="altmount-container" class="flex-grow overflow-hidden">
-                <div class="p-10 text-center text-gray-600 text-xs font-medium">Lade Altmount...</div>
-            </div>
+              </div>
+            </label>
+          </div>
         </div>
+        <div id="altmount-container" class="flex-grow overflow-hidden">
+          <div class="p-10 text-center text-gray-600 text-xs font-medium">
+            Lade Altmount...
+          </div>
+        </div>
+      </div>
     </div>
 
     <script>
-        let currentPageT = 1;
-        let currentPageH = 1;
-        let isRefreshing = false;
-        let searchTimeout;
+      let currentPageT = 1;
+      let currentPageH = 1;
+      let isRefreshing = false;
+      let searchTimeout;
 
-        function setViewMode(mode) {
-            const container = document.getElementById('layout-container');
-            const btnStacked = document.getElementById('btn-stacked');
-            const btnGrid = document.getElementById('btn-grid');
-            if (mode === 'grid') {
-                container.classList.remove('grid-cols-1'); container.classList.add('lg:grid-cols-2');
-                btnGrid.classList.add('active'); btnStacked.classList.remove('active');
-            } else {
-                container.classList.remove('lg:grid-cols-2'); container.classList.add('grid-cols-1');
-                btnStacked.classList.add('active'); btnGrid.classList.remove('active');
+      function setViewMode(mode) {
+        const container = document.getElementById("layout-container");
+        const btnStacked = document.getElementById("btn-stacked");
+        const btnGrid = document.getElementById("btn-grid");
+        if (mode === "grid") {
+          container.classList.remove("grid-cols-1");
+          container.classList.add("lg:grid-cols-2");
+          btnGrid.classList.add("active");
+          btnStacked.classList.remove("active");
+        } else {
+          container.classList.remove("lg:grid-cols-2");
+          container.classList.add("grid-cols-1");
+          btnStacked.classList.add("active");
+          btnGrid.classList.remove("active");
+        }
+        localStorage.setItem("dashboardViewMode", mode);
+      }
+
+      const savedMode = localStorage.getItem("dashboardViewMode") || "stacked";
+      setViewMode(savedMode);
+
+      window.showDetail = function (text) {
+        if (!text || text === "undefined") return;
+        alert("Status Details:\n" + text);
+      };
+
+      function debounceSearch(type) {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          if (type === "t") currentPageT = 1;
+          if (type === "h") currentPageH = 1;
+          updateDashboard(true);
+        }, 400);
+      }
+
+      window.changePageT = (p) => {
+        currentPageT = p;
+        updateDashboard(true);
+      };
+      window.changePageH = (p) => {
+        currentPageH = p;
+        updateDashboard(true);
+      };
+
+      async function updateDashboard(force = false) {
+        if (isRefreshing && !force) return;
+
+        const searchTorboxEl = document.getElementById("search-torbox");
+        const searchAltmountEl = document.getElementById("search-altmount");
+        const filterToggleEl = document.getElementById("filter-toggle");
+
+        if (!searchTorboxEl || !searchAltmountEl) return;
+
+        isRefreshing = true;
+        const indicator = document.getElementById("refresh-indicator");
+        if (indicator) indicator.style.opacity = "1";
+
+        try {
+          const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterToggleEl.checked ? 1 : 0}&search_t=${encodeURIComponent(searchTorboxEl.value)}&search_h=${encodeURIComponent(searchAltmountEl.value)}&_t=${Date.now()}`;
+
+          const response = await fetch(url);
+          if (response.status === 401) {
+            window.location.href = "/login";
+            return;
+          }
+
+          const data = await response.json();
+          if (data.status === "success") {
+            // WICHTIG: Hier wurden die Keys an die main.py angepasst
+            if (data.table_html && data.table_html.trim().length > 10) {
+              document.getElementById("torbox-container").innerHTML =
+                data.table_html;
             }
-            localStorage.setItem('dashboardViewMode', mode);
-        }
-
-        const savedMode = localStorage.getItem('dashboardViewMode') || 'stacked';
-        setViewMode(savedMode);
-
-        window.showDetail = function(text) {
-            if (!text || text === 'undefined') return;
-            alert("Status Details:\n" + text);
-        };
-
-        function debounceSearch(type) {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                if (type === 't') currentPageT = 1;
-                if (type === 'h') currentPageH = 1;
-                updateDashboard(true);
-            }, 400);
-        }
-
-        window.changePageT = (p) => { currentPageT = p; updateDashboard(true); };
-        window.changePageH = (p) => { currentPageH = p; updateDashboard(true); };
-
-        async function updateDashboard(force = false) {
-            if (isRefreshing && !force) return;
-            
-            const searchTorboxEl = document.getElementById('search-torbox');
-            const searchAltmountEl = document.getElementById('search-altmount');
-            const filterToggleEl = document.getElementById('filter-toggle');
-
-            if (!searchTorboxEl || !searchAltmountEl) return;
-
-            isRefreshing = true;
-            const indicator = document.getElementById('refresh-indicator');
-            if (indicator) indicator.style.opacity = '1';
-
-            try {
-                const url = `/?content_only=1&page_t=${currentPageT}&page_h=${currentPageH}&filter_active=${filterToggleEl.checked ? 1 : 0}&search_t=${encodeURIComponent(searchTorboxEl.value)}&search_h=${encodeURIComponent(searchAltmountEl.value)}&_t=${Date.now()}`;
-                
-                const response = await fetch(url);
-                if (response.status === 401) { window.location.href = "/login"; return; }
-                
-                const data = await response.json();
-                if (data.status === "success") {
-                    // WICHTIG: Hier wurden die Keys an die main.py angepasst
-                    document.getElementById('torbox-container').innerHTML = data.table_html;
-                    document.getElementById('altmount-container').innerHTML = data.history_html;
-                    document.getElementById('total-altmount').innerText = data.total_history;
-                }
-            } catch (error) {
-                console.error("Sync Error:", error);
-            } finally {
-                isRefreshing = false;
-                if (indicator) setTimeout(() => { indicator.style.opacity = '0'; }, 800);
+            if (data.history_html && data.history_html.trim().length > 10) {
+              document.getElementById("altmount-container").innerHTML =
+                data.history_html;
+              document.getElementById("total-altmount").innerText =
+                data.total_history;
             }
+          }
+        } catch (error) {
+          console.error("Sync Error:", error);
+        } finally {
+          isRefreshing = false;
+          if (indicator)
+            setTimeout(() => {
+              indicator.style.opacity = "0";
+            }, 800);
         }
+      }
 
-        setInterval(() => updateDashboard(false), 5000);
-        document.addEventListener('DOMContentLoaded', () => updateDashboard(true));
+      setInterval(() => updateDashboard(false), 5000);
+      document.addEventListener("DOMContentLoaded", () =>
+        updateDashboard(true),
+      );
     </script>
-</body>
+  </body>
 </html>
