@@ -69,6 +69,30 @@ def get_current_user(request: Request):
     return request.cookies.get("user")
 
 
+def extract_clean_name(raw_value: Any, params: dict) -> str:
+    """Extrahiert den sauberen Namen, wie wir es früher stabil hatten."""
+    name_candidate = "Unknown NZB"
+    if isinstance(raw_value, UploadFile) and raw_value.filename:
+        name_candidate = raw_value.filename
+    elif isinstance(raw_value, str) and "filename=" in raw_value:
+        match = re.search(r"filename=['\"]([^'\"]+)['\"]", raw_value)
+        if match:
+            name_candidate = match.group(1)
+    elif "name" in params:
+        name_candidate = params["name"]
+
+    # Gründliches Entfernen von technischem Overhead
+    clean = str(name_candidate)
+    for pattern in [
+        r"UploadFile\(.*?\)",
+        r"Headers\(.*?\)",
+        r"filename=",
+        r"['\"\{\}\[\]]",
+    ]:
+        clean = re.sub(pattern, "", clean)
+    return clean.strip() or "Unknown NZB"
+
+
 async def fetch_torbox_to_db():
     global torbox_memory_cache, last_api_fetch
     async with cache_lock:
@@ -82,6 +106,7 @@ async def fetch_torbox_to_db():
                 if resp.status_code == 200:
                     api_data = resp.json().get("data", [])
                     new_cache = []
+                    # Wir speichern in RAM und DB
                     with sqlite3.connect(DB_PATH) as conn:
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM torbox_cache")
@@ -103,64 +128,57 @@ async def fetch_torbox_to_db():
                         conn.commit()
                     torbox_memory_cache = new_cache
                     last_api_fetch = time.time()
-        except Exception as e:
-            print(f"Torbox Background Fetch Error: {e}")
+                else:
+                    # Falls API nicht 200 liefert, Cache leeren (wie gewünscht)
+                    torbox_memory_cache = []
+        except Exception:
+            torbox_memory_cache = []
 
 
-# --- SABNZBD API (FIX FÜR RADARR UPLOAD STRUKTUR) ---
+# --- SABNZBD API (BACK TO BASICS) ---
 @app.api_route("/api", methods=["GET", "POST"])
 async def sabnzbd_api(request: Request):
     params = dict(request.query_params)
     mode = params.get("mode")
-    nzb_name = "Unknown NZB"
-    final_upload = None
+    final_name = "Unknown NZB"
 
     if request.method == "POST":
         try:
             form_data = await request.form()
+            # Wir suchen die Datei im Formular
+            upload = (
+                form_data.get("nzbfile")
+                or form_data.get("file")
+                or form_data.get("name")
+            )
 
-            # 1. Wir prüfen alle Felder nach einem UploadFile Objekt
-            for key in form_data:
-                value = form_data[key]
-                if isinstance(value, UploadFile):
-                    final_upload = value
-                    break  # Gefunden!
+            # Falls es ein Upload-Objekt ist, kopiere es
+            if isinstance(upload, UploadFile):
+                final_name = extract_clean_name(upload, params)
+                if not final_name.lower().endswith(".nzb"):
+                    final_name += ".nzb"
 
-            # 2. Namen bestimmen
-            if final_upload and final_upload.filename:
-                nzb_name = final_upload.filename
-            elif "name" in params:
-                nzb_name = params["name"]
-
-            # 3. Datei speichern, wenn gefunden
-            if final_upload:
-                file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
-                with open(file_path, "wb") as buffer:
-                    shutil.copyfileobj(final_upload.file, buffer)
-                print(f"ERFOLG: {nzb_name} im Blackhole gespeichert.")
+                with open(os.path.join(BLACKHOLE_DIR, final_name), "wb") as buffer:
+                    shutil.copyfileobj(upload.file, buffer)
             else:
-                print(f"WARNUNG: Kein Upload in POST gefunden. Mode: {mode}")
-
+                final_name = extract_clean_name(upload, params)
         except Exception as e:
-            print(f"FEHLER beim Verarbeiten des POST: {e}")
+            print(f"API Error: {e}")
 
-    # 4. In History loggen (Säuberung für die DB)
+    # Fallback für Namen aus Query
+    if final_name == "Unknown NZB" and "name" in params:
+        final_name = extract_clean_name(params["name"], params)
+
+    # Logging in die DB
     try:
-        clean_display_name = str(nzb_name)
-        # Falls nzb_name noch das "UploadFile(...)" String-Monster ist:
-        if "filename=" in clean_display_name:
-            match = re.search(r"filename='([^']+)'", clean_display_name)
-            if match:
-                clean_display_name = match.group(1)
-
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
-                (clean_display_name, str(mode), "200"),
+                (final_name, str(mode), "200"),
             )
             conn.commit()
-    except Exception as e:
-        print(f"DB Log Fehler: {e}")
+    except:
+        pass
 
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
@@ -182,6 +200,7 @@ async def dashboard(
     if not username:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
+    # Torbox
     t_filtered = (
         [
             i
@@ -194,6 +213,7 @@ async def dashboard(
     total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
     torbox_list = t_filtered[(page_t - 1) * ITEMS_PER_PAGE : page_t * ITEMS_PER_PAGE]
 
+    # Altmount History
     altmount_data, total_h = [], 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -216,11 +236,7 @@ async def dashboard(
 
             raw_rows = [dict(row) for row in cursor.fetchall()]
             for log in raw_rows:
-                # Einfacher Cleanup für die Anzeige
-                name = log.get("info", "Unknown")
-                for c in ["'", "}", "]", "{", '"', "UploadFile(filename="]:
-                    name = name.replace(c, "")
-                log["display_name"] = name.strip()
+                log["display_name"] = log.get("info", "Unknown NZB")
             altmount_data = raw_rows
     except:
         pass
@@ -282,9 +298,9 @@ async def login(request: Request):
             return templates.TemplateResponse(
                 "login.html", {"request": request, "error": "Ungültige Anmeldedaten"}
             )
-        except Exception as e:
+        except:
             return templates.TemplateResponse(
-                "login.html", {"request": request, "error": str(e)}
+                "login.html", {"request": request, "error": "Fehler beim Login"}
             )
     return templates.TemplateResponse("login.html", {"request": request})
 
