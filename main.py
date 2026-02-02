@@ -4,7 +4,16 @@ import httpx
 import asyncio
 import os
 import time
-from fastapi import FastAPI, Request, Depends, Form, HTTPException, status
+from fastapi import (
+    FastAPI,
+    Request,
+    Depends,
+    Form,
+    HTTPException,
+    status,
+    UploadFile,
+    File,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional, Any, List, Dict
@@ -13,11 +22,15 @@ from typing import Optional, Any, List, Dict
 TORBOX_API_KEY = str(os.getenv("TORBOX_API_KEY", ""))
 DATABASE_DIR = str(os.getenv("DATABASE_DIR", "./"))
 DB_PATH = os.path.join(DATABASE_DIR, "proxy_history.db")
+BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "./blackhole"))
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
 
-# --- GLOBALER RAM-CACHE (für die Millisekunden-Reaktion) ---
+# Sicherstellen, dass Verzeichnisse existieren
+os.makedirs(BLACKHOLE_DIR, exist_ok=True)
+
+# --- GLOBALER RAM-CACHE ---
 torbox_memory_cache: List[Dict] = []
 last_api_fetch = 0
 
@@ -27,9 +40,21 @@ templates = Jinja2Templates(directory="templates")
 
 # --- DATABASE INITIALISIERUNG ---
 def init_db():
-    """Erstellt die Cache-Tabelle, falls sie nicht existiert."""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
+        # History Tabelle (für das Dashboard)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                info TEXT,
+                time TEXT,
+                mode TEXT,
+                status TEXT
+            )
+        """
+        )
+        # Cache Tabelle (für Torbox Daten)
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS torbox_cache (
@@ -51,13 +76,55 @@ def get_current_user(request: Request):
     return request.cookies.get("user")
 
 
-@app.middleware("http")
-async def add_csp_header(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Content-Security-Policy"] = (
-        "script-src 'self' 'unsafe-inline' https://org.enteente.nl;"
-    )
-    return response
+# --- SABNZBD API ENDPUNKT (Fix für Radarr/Sonarr) ---
+@app.api_route("/api", methods=["GET", "POST"])
+async def sabnzbd_api(request: Request):
+    params = dict(request.query_params)
+    mode = params.get("mode")
+
+    # Datei-Handling für Radarr/Sonarr Uploads
+    nzb_name = "Unknown NZB"
+    if request.method == "POST":
+        try:
+            form_data = await request.form()
+            for key, value in form_data.items():
+                params[key] = value
+
+            # Falls eine Datei hochgeladen wird (nzbfile ist Standard bei SAB)
+            if "nzbfile" in form_data:
+                upload = form_data["nzbfile"]
+                if isinstance(upload, UploadFile):
+                    nzb_name = upload.filename
+                    content = await upload.read()
+                    # Speichern im Blackhole (optional, falls benötigt)
+                    file_path = os.path.join(BLACKHOLE_DIR, nzb_name)
+                    with open(file_path, "wb") as f:
+                        f.write(content)
+        except Exception as e:
+            print(f"API Upload Error: {e}")
+
+    # Fallback Name aus URL Params
+    if nzb_name == "Unknown NZB" and "name" in params:
+        nzb_name = params["name"]
+
+    # 1. Logging in die Datenbank für das Dashboard
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO history (info, time, mode, status) VALUES (?, datetime('now','localtime'), ?, ?)",
+                (str(nzb_name), str(mode), "200"),
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"API DB Log Error: {e}")
+
+    # 2. Response an Radarr/Sonarr (SABnzbd Format)
+    if mode == "addfile" or mode == "addurl":
+        return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
+
+    # Standard-Check für "Test Connection"
+    return JSONResponse({"status": True, "version": "3.0.0"})
 
 
 # --- CORE FUNKTION: TORBOX DATEN MANAGEMENT ---
@@ -65,7 +132,6 @@ async def refresh_torbox_data(force_api: bool = False):
     global torbox_memory_cache, last_api_fetch
     current_time = time.time()
 
-    # 1. API Abfrage nur alle 15 Sekunden oder wenn erzwungen
     if force_api or (current_time - last_api_fetch > 15):
         try:
             async with httpx.AsyncClient() as client:
@@ -77,12 +143,9 @@ async def refresh_torbox_data(force_api: bool = False):
                 if resp.status_code == 200:
                     api_data = resp.json().get("data", [])
                     new_cache = []
-
                     with sqlite3.connect(DB_PATH) as conn:
                         cursor = conn.cursor()
-                        # Alten Cache in DB leeren
                         cursor.execute("DELETE FROM torbox_cache")
-
                         for item in api_data:
                             name = item.get("name", "Unbekannt")
                             progress = round(float(item.get("progress", 0)) * 100, 1)
@@ -91,8 +154,6 @@ async def refresh_torbox_data(force_api: bool = False):
                                 .replace("_", " ")
                                 .upper()
                             )
-
-                            # In DB speichern
                             cursor.execute(
                                 "INSERT INTO torbox_cache (name, progress, state) VALUES (?, ?, ?)",
                                 (name, progress, state),
@@ -100,16 +161,13 @@ async def refresh_torbox_data(force_api: bool = False):
                             new_cache.append(
                                 {"name": name, "progress": progress, "state": state}
                             )
-
                         conn.commit()
-
                     torbox_memory_cache = new_cache
                     last_api_fetch = current_time
                     return
-        except Exception as e:
-            print(f"Torbox API Error: {e}")
+        except:
+            pass
 
-    # 2. Fallback: Wenn API nicht läuft oder kein Update nötig, aus DB laden (falls RAM leer)
     if not torbox_memory_cache:
         try:
             with sqlite3.connect(DB_PATH) as conn:
@@ -117,8 +175,8 @@ async def refresh_torbox_data(force_api: bool = False):
                 cursor = conn.cursor()
                 cursor.execute("SELECT name, progress, state FROM torbox_cache")
                 torbox_memory_cache = [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            print(f"Cache Load Error: {e}")
+        except:
+            pass
 
 
 # --- DASHBOARD ROUTE ---
@@ -136,27 +194,23 @@ async def dashboard(
     if not username:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
-    # Typ-Konvertierung
     try:
         p_t, p_h = int(str(page_t)), int(str(page_h))
         c_only, f_active = int(str(content_only)), int(str(filter_active))
     except:
         p_t, p_h, c_only, f_active = 1, 1, 0, 1
 
-    # Nur beim Auto-Refresh (content_only=1 und erste Seiten) die API triggern
-    should_fetch_api = c_only == 1 and p_t == 1 and p_h == 1
-    await refresh_torbox_data(force_api=should_fetch_api)
+    await refresh_torbox_data(force_api=(c_only == 1 and p_t == 1))
 
-    # --- TORBOX LOKAL (RAM) FILTERN ---
     t_filtered = torbox_memory_cache
     if search_t:
-        term = search_t.lower().strip()
-        t_filtered = [i for i in t_filtered if term in i["name"].lower()]
+        t_filtered = [
+            i for i in t_filtered if search_t.lower().strip() in i["name"].lower()
+        ]
 
     total_t_pages = max(1, math.ceil(len(t_filtered) / ITEMS_PER_PAGE))
     torbox_list = t_filtered[(p_t - 1) * ITEMS_PER_PAGE : p_t * ITEMS_PER_PAGE]
 
-    # --- HISTORY LOKAL (DB) ---
     history_data, total_h = [], 0
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -165,20 +219,19 @@ async def dashboard(
             h_query = "SELECT * FROM history WHERE 1=1"
             h_params = []
             if f_active:
-                h_query += " AND mode = 'addfile'"
+                h_query += " AND mode IN ('addfile', 'addurl')"
             if search_h:
                 h_query += " AND info LIKE ?"
                 h_params.append(f"%{search_h.strip()}%")
 
             cursor.execute(f"SELECT COUNT(*) FROM ({h_query})", h_params)
             total_h = cursor.fetchone()[0]
-
             h_query += " ORDER BY id DESC LIMIT ? OFFSET ?"
             h_params.extend([ITEMS_PER_PAGE, (p_h - 1) * ITEMS_PER_PAGE])
             cursor.execute(h_query, h_params)
             history_data = [dict(row) for row in cursor.fetchall()]
-    except Exception as e:
-        print(f"DB History Error: {e}")
+    except:
+        pass
 
     total_h_pages = max(1, math.ceil(total_h / ITEMS_PER_PAGE))
 
