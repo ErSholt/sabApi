@@ -288,18 +288,34 @@ async def sabnzbd_api(request: Request):
 
     print(f"{'='*60}\n")
 
-    # Erweiterte Antwort für Sonarr/Radarr Kompatibilität
+    # Erweitertes Antwort-Format für Sonarr/Radarr Validierung
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
 
-    # Der Verbindungstest fragt oft nach 'queue' oder 'status'
+    # Sonarr/Radarr prüfen beim Test oft 'mode=queue' oder 'mode=fullstatus'
+    # Wir liefern eine Struktur, die ein echtes SABnzbd imitiert
     return JSONResponse(
         {
             "status": True,
             "version": "3.0.0",
-            "active_count": 0,
-            "paused": False,
-            "queue": {"status": "Idle", "slots": [], "version": "3.0.0"},
+            "queue": {
+                "status": "Idle",
+                "speed": "0",
+                "size": "0 B",
+                "sizeleft": "0 B",
+                "slots": [],
+                "noofslots": 0,
+                "paused": False,
+                "version": "3.0.0",
+                "finish": 0,
+                "cache_size": "0 B",
+            },
+            "server_stats": {
+                "total_size": "0 B",
+                "month_size": "0 B",
+                "week_size": "0 B",
+                "day_size": "0 B",
+            },
         }
     )
 
