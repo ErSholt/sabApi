@@ -288,11 +288,20 @@ async def sabnzbd_api(request: Request):
 
     print(f"{'='*60}\n")
 
-    # Response je nach Mode
+    # Erweiterte Antwort für Sonarr/Radarr Kompatibilität
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
 
-    return JSONResponse({"status": True, "version": "3.0.0"})
+    # Der Verbindungstest fragt oft nach 'queue' oder 'status'
+    return JSONResponse(
+        {
+            "status": True,
+            "version": "3.0.0",
+            "active_count": 0,
+            "paused": False,
+            "queue": {"status": "Idle", "slots": [], "version": "3.0.0"},
+        }
+    )
 
 
 # --- DASHBOARD ROUTE ---
