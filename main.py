@@ -291,7 +291,22 @@ async def sabnzbd_api(request: Request):
     # Erweitertes Antwort-Format für Sonarr/Radarr Validierung
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
-
+# 2. Für alles andere (get_config, queue, etc.) fragen wir Altmount direkt
+    try:
+        # Wir geben die Query-Parameter einfach weiter
+        async with httpx.AsyncClient() as client:
+            altmount_response = await client.get(
+                ALTMOUNT_URL, 
+                params=request.query_params,
+                timeout=5.0
+            )
+            
+            if altmount_response.status_code == 200:
+                # Wir schicken die echte Antwort von Altmount 1:1 zurück an Sonarr
+                return JSONResponse(content=altmount_response.json())
+            
+    except Exception as e:
+        print(f"[PROXY ERROR] Konnte Altmount nicht erreichen: {e}")
     # Sonarr/Radarr prüfen beim Test oft 'mode=queue' oder 'mode=fullstatus'
     # Wir liefern eine Struktur, die ein echtes SABnzbd imitiert
     return JSONResponse(
