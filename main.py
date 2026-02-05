@@ -29,6 +29,7 @@ BLACKHOLE_DIR = str(os.getenv("BLACKHOLE_DIR", "/blackhole"))
 PROXY_USER = str(os.getenv("PROXY_USER", "admin"))
 PROXY_PASS = str(os.getenv("PROXY_PASS", "password"))
 ITEMS_PER_PAGE = 10
+BACKEND_URL = str(os.getenv("BACKEND_URL", "http://altmount:8080/sabnzbd"))
 
 # Startup Logging
 print("\n" + "=" * 60)
@@ -289,24 +290,25 @@ async def sabnzbd_api(request: Request):
     print(f"{'='*60}\n")
 
     # Erweitertes Antwort-Format für Sonarr/Radarr Validierung
+    if mode not in ["addfile", "addurl"]:
+        try:
+            async with httpx.AsyncClient() as client:
+                # Wir leiten die Anfrage 1:1 an die BACKEND_URL weiter
+                altmount_resp = await client.get(
+                    BACKEND_URL,
+                    params=request.query_params,
+                    timeout=5.0
+                )
+                if altmount_resp.status_code == 200:
+                    # Wir geben die originale Antwort von Altmount zurück
+                    return JSONResponse(content=altmount_resp.json())
+        except Exception as e:
+            print(f"[PROXY ERROR] Backend {BACKEND_URL} nicht erreichbar: {e}")
+    
+    
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
-# 2. Für alles andere (get_config, queue, etc.) fragen wir Altmount direkt
-    try:
-        # Wir geben die Query-Parameter einfach weiter
-        async with httpx.AsyncClient() as client:
-            altmount_response = await client.get(
-                ALTMOUNT_URL, 
-                params=request.query_params,
-                timeout=5.0
-            )
-            
-            if altmount_response.status_code == 200:
-                # Wir schicken die echte Antwort von Altmount 1:1 zurück an Sonarr
-                return JSONResponse(content=altmount_response.json())
-            
-    except Exception as e:
-        print(f"[PROXY ERROR] Konnte Altmount nicht erreichen: {e}")
+
     # Sonarr/Radarr prüfen beim Test oft 'mode=queue' oder 'mode=fullstatus'
     # Wir liefern eine Struktur, die ein echtes SABnzbd imitiert
     return JSONResponse(
