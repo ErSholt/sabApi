@@ -293,38 +293,35 @@ async def sabnzbd_api(request: Request):
 # --- TRANSPARENT PROXY / WEITERLEITUNG AN ALTMOUNT ---
     try:
         async with httpx.AsyncClient() as client:
-            headers = dict(request.headers)
-            headers.pop("host", None)
-            headers.pop("content-length", None)
-
             if mode in ["addfile", "addurl"] and request.method == "POST":
-                # Da wir den Body (content) oben schon mit upload_obj.read() gelesen haben,
-                # müssen wir ihn hier manuell als 'files' oder 'data' mitschicken.
-                # Wir schicken die Original-Parameter und die Datei an Altmount.
+                # Filtert form_data: Nur Strings behalten, UploadFile-Objekte ignorieren
+                # (da diese separat über 'files' gesendet werden)
+                filtered_data = {}
+                for key, value in form_data.items():
+                    if isinstance(value, str):
+                        filtered_data[key] = value
                 
-                # Wir bauen den Request für Altmount nach:
-                # Da Sonarr meist multipart/form-data schickt, reichen wir es so weiter:
+                # Wir bauen den Request für Altmount nach
+                # Die Datei 'content' haben wir ja bereits oben im Code eingelesen
                 files = {'nzbfile': (final_name, content)}
-                data = dict(form_data) # Alle anderen Form-Felder (apikey, etc.)
                 
                 altmount_resp = await client.post(
                     BACKEND_URL,
                     params=params,
-                    data=data,
+                    data=filtered_data,
                     files=files,
-                    timeout=10.0
+                    timeout=15.0
                 )
             else:
                 # Für get_config, queue etc. (GET Requests)
                 altmount_resp = await client.get(
                     BACKEND_URL,
                     params=params,
-                    headers=headers,
                     timeout=5.0
                 )
 
             if altmount_resp.status_code == 200:
-                print(f"[API] Weiterleitung an Altmount erfolgreich (Status 200)")
+                print(f"[API] Weiterleitung an Altmount erfolgreich")
                 return JSONResponse(content=altmount_resp.json())
             else:
                 print(f"[API] Altmount antwortete mit Status: {altmount_resp.status_code}")
@@ -332,7 +329,7 @@ async def sabnzbd_api(request: Request):
     except Exception as e:
         print(f"[PROXY ERROR] Weiterleitung zu Altmount ({BACKEND_URL}) fehlgeschlagen: {e}")
 
-    # --- FALLBACK / EIGENE ANTWORT (Wenn Altmount nicht antwortet oder bei manuellem Upload) ---
+    # --- FALLBACK ---
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
 
@@ -350,7 +347,6 @@ async def sabnzbd_api(request: Request):
             },
         }
     )
-
 
 # --- DASHBOARD ROUTE ---
 @app.api_route("/", methods=["GET", "POST"], response_class=HTMLResponse)
