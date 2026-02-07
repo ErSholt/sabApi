@@ -290,67 +290,63 @@ async def sabnzbd_api(request: Request):
     print(f"{'='*60}\n")
 
     # Erweitertes Antwort-Format für Sonarr/Radarr Validierung
-    # --- TRANSPARENT PROXY / WEITERLEITUNG AN ALTMOUNT ---
-    if mode not in ["addfile", "addurl"] or request.method == "POST":
-        try:
-            async with httpx.AsyncClient() as client:
-                # Wir leiten den kompletten Request (GET oder POST) an Altmount weiter
-                # Damit auch POST-Daten (Dateien) dort ankommen
-                if request.method == "POST":
-                    # Extrahiere den Body für die Weiterleitung
-                    body = await request.body()
-                    headers = dict(request.headers)
-                    # Host-Header entfernen, da httpx ihn selbst setzt
-                    headers.pop("host", None)
-                    headers.pop("content-length", None)
-                    
-                    altmount_resp = await client.post(
-                        BACKEND_URL,
-                        params=request.query_params,
-                        content=body,
-                        headers=headers,
-                        timeout=10.0
-                    )
-                else:
-                    altmount_resp = await client.get(
-                        BACKEND_URL,
-                        params=request.query_params,
-                        timeout=5.0
-                    )
+# --- TRANSPARENT PROXY / WEITERLEITUNG AN ALTMOUNT ---
+    try:
+        async with httpx.AsyncClient() as client:
+            headers = dict(request.headers)
+            headers.pop("host", None)
+            headers.pop("content-length", None)
 
-                # Wenn Altmount erfolgreich antwortet, geben wir deren Antwort zurück
-                if altmount_resp.status_code == 200:
-                    return JSONResponse(content=altmount_resp.json())
-        except Exception as e:
-            print(f"[PROXY ERROR] Weiterleitung zu Altmount ({BACKEND_URL}) fehlgeschlagen: {e}")
+            if mode in ["addfile", "addurl"] and request.method == "POST":
+                # Da wir den Body (content) oben schon mit upload_obj.read() gelesen haben,
+                # müssen wir ihn hier manuell als 'files' oder 'data' mitschicken.
+                # Wir schicken die Original-Parameter und die Datei an Altmount.
+                
+                # Wir bauen den Request für Altmount nach:
+                # Da Sonarr meist multipart/form-data schickt, reichen wir es so weiter:
+                files = {'nzbfile': (final_name, content)}
+                data = dict(form_data) # Alle anderen Form-Felder (apikey, etc.)
+                
+                altmount_resp = await client.post(
+                    BACKEND_URL,
+                    params=params,
+                    data=data,
+                    files=files,
+                    timeout=10.0
+                )
+            else:
+                # Für get_config, queue etc. (GET Requests)
+                altmount_resp = await client.get(
+                    BACKEND_URL,
+                    params=params,
+                    headers=headers,
+                    timeout=5.0
+                )
 
-    # --- FALLBACK / EIGENE ANTWORT ---
+            if altmount_resp.status_code == 200:
+                print(f"[API] Weiterleitung an Altmount erfolgreich (Status 200)")
+                return JSONResponse(content=altmount_resp.json())
+            else:
+                print(f"[API] Altmount antwortete mit Status: {altmount_resp.status_code}")
+                
+    except Exception as e:
+        print(f"[PROXY ERROR] Weiterleitung zu Altmount ({BACKEND_URL}) fehlgeschlagen: {e}")
+
+    # --- FALLBACK / EIGENE ANTWORT (Wenn Altmount nicht antwortet oder bei manuellem Upload) ---
     if mode in ["addfile", "addurl"]:
-        # Wenn die Weiterleitung oben nicht gegriffen hat (oder wir sichergehen wollen)
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
 
-    # Sonarr/Radarr Fallback (für get_config etc., falls Altmount offline ist)
     return JSONResponse(
         {
             "status": True,
             "version": "3.0.0",
             "queue": {
-                "status": "Idle",
-                "speed": "0",
-                "size": "0 B",
-                "sizeleft": "0 B",
-                "slots": [],
-                "noofslots": 0,
-                "paused": False,
-                "version": "3.0.0",
-                "finish": 0,
-                "cache_size": "0 B",
+                "status": "Idle", "speed": "0", "size": "0 B", "sizeleft": "0 B",
+                "slots": [], "noofslots": 0, "paused": False, "version": "3.0.0",
+                "finish": 0, "cache_size": "0 B",
             },
             "server_stats": {
-                "total_size": "0 B",
-                "month_size": "0 B",
-                "week_size": "0 B",
-                "day_size": "0 B",
+                "total_size": "0 B", "month_size": "0 B", "week_size": "0 B", "day_size": "0 B",
             },
         }
     )
