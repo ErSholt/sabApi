@@ -185,6 +185,39 @@
         opacity: 1;
         pointer-events: auto;
       }
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.65);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+        padding: 16px;
+      }
+      .overlay.open {
+        display: flex;
+      }
+      .overlay-card {
+        width: min(520px, 100%);
+        background: #141414;
+        border: 1px solid #1f1f1f;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+        padding: 20px;
+      }
+      .overlay-title {
+        font-size: 12px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: #9a9a9a;
+      }
+      .overlay-text {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #e5e5e5;
+        line-height: 1.5;
+        word-break: break-word;
+      }
     </style>
   </head>
   <body class="p-4 md:p-8 text-gray-200">
@@ -320,6 +353,16 @@
       </div>
     </div>
 
+    <div id="ui-overlay" class="overlay" onclick="closeOverlay(event)">
+      <div class="overlay-card">
+        <div class="overlay-title">Details</div>
+        <div id="overlay-text" class="overlay-text"></div>
+        <div class="mt-5 flex justify-end">
+          <button class="page-btn px-3 py-2" onclick="closeOverlay()">Schließen</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       let currentPageT = 1;
       let currentPageH = 1;
@@ -369,8 +412,20 @@
 
       window.showDetail = function (text) {
         if (!text || text === "undefined") return;
-        alert("Status Details:\n" + text);
+        const overlay = document.getElementById("ui-overlay");
+        const out = document.getElementById("overlay-text");
+        if (!overlay || !out) return;
+        out.textContent = text;
+        overlay.classList.add("open");
       };
+
+      function closeOverlay(event) {
+        if (event && event.target && !event.target.classList.contains("overlay")) {
+          return;
+        }
+        const overlay = document.getElementById("ui-overlay");
+        if (overlay) overlay.classList.remove("open");
+      }
 
       function toggleGlobalSearch() {
         const input = document.getElementById("global-search");
