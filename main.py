@@ -295,14 +295,17 @@ async def sabnzbd_api(request: Request):
             async with httpx.AsyncClient() as client:
                 # Wir leiten die Anfrage 1:1 an die BACKEND_URL weiter
                 altmount_resp = await client.get(
-                    BACKEND_URL, params=request.query_params, timeout=5.0
+                    BACKEND_URL,
+                    params=request.query_params,
+                    timeout=5.0
                 )
                 if altmount_resp.status_code == 200:
                     # Wir geben die originale Antwort von Altmount zurück
                     return JSONResponse(content=altmount_resp.json())
         except Exception as e:
             print(f"[PROXY ERROR] Backend {BACKEND_URL} nicht erreichbar: {e}")
-
+    
+    
     if mode in ["addfile", "addurl"]:
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
 
