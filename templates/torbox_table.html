@@ -48,17 +48,23 @@
     <div class="px-6 py-4 flex justify-between items-center table-footer">
         <span class="text-[10px] text-gray-400 font-medium">SEITE {{ page_t }} / {{ total_t_pages }}</span>
         <div class="flex gap-1">
-            <button onclick="changePageT(1)" class="p-2 rounded bg-gray-900 border border-gray-800 hover:bg-gray-700 disabled:opacity-20" {% if page_t == 1 %}disabled{% endif %}>
-                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M12.707 5.293l-5 5 5 5-1.414 1.414-6.414-6.414 6.414-6.414 1.414 1.414z"/></svg>
+            <button onclick="changePageT(1)" class="page-btn p-2" {% if page_t == 1 %}disabled{% endif %} title="Erste Seite">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M11 6l-6 6 6 6v-4.5l-1.5-1.5L13 12 9.5 8.5 11 7V6z"></path>
+                    <path d="M19 6l-6 6 6 6v-4.5l-1.5-1.5L21 12l-3.5-3.5L19 7V6z"></path>
+                </svg>
             </button>
-            <button onclick="changePageT({{ page_t - 1 }})" class="p-2 rounded bg-gray-900 border border-gray-800 hover:bg-gray-700 disabled:opacity-20" {% if page_t <= 1 %}disabled{% endif %}>
+            <button onclick="changePageT({{ page_t - 1 }})" class="page-btn p-2" {% if page_t <= 1 %}disabled{% endif %} title="Zurück">
                 <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke="currentColor" stroke-width="2" fill="none"/></svg>
             </button>
-            <button onclick="changePageT({{ page_t + 1 }})" class="p-2 rounded bg-gray-900 border border-gray-800 hover:bg-gray-700 disabled:opacity-20" {% if page_t >= total_t_pages %}disabled{% endif %}>
+            <button onclick="changePageT({{ page_t + 1 }})" class="page-btn p-2" {% if page_t >= total_t_pages %}disabled{% endif %} title="Weiter">
                 <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" fill="none"/></svg>
             </button>
-            <button onclick="changePageT({{ total_t_pages }})" class="p-2 rounded bg-gray-900 border border-gray-800 hover:bg-gray-700 disabled:opacity-20" {% if page_t == total_t_pages %}disabled{% endif %}>
-                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M7.293 14.707l5-5-5-5 1.414-1.414 6.414 6.414-6.414 6.414-1.414-1.414z"/></svg>
+            <button onclick="changePageT({{ total_t_pages }})" class="page-btn p-2" {% if page_t == total_t_pages %}disabled{% endif %} title="Letzte Seite">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M13 6l6 6-6 6v-4.5l1.5-1.5L11 12l3.5-3.5L13 7V6z"></path>
+                    <path d="M5 6l6 6-6 6v-4.5l1.5-1.5L3 12l3.5-3.5L5 7V6z"></path>
+                </svg>
             </button>
         </div>
     </div>
