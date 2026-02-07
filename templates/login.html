@@ -5,40 +5,53 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - The Companion</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg: #0f1115;
+            --panel: #16181f;
+            --panel-2: #1b1e27;
+            --stroke: #242834;
+            --text: #e5e7eb;
+            --muted: #9aa3b2;
+            --accent: #a78bfa;
+        }
         body { 
-            background-color: #000000; 
-            color: #f3f4f6; 
-            font-family: 'Inter', sans-serif;
-            background-image: radial-gradient(circle at 50% -20%, #1a1a1a 0%, #000000 100%);
+            background:
+                radial-gradient(900px 500px at 20% -10%, rgba(124, 92, 245, 0.12), transparent 60%),
+                radial-gradient(700px 400px at 80% -20%, rgba(167, 139, 250, 0.1), transparent 60%),
+                var(--bg);
+            color: var(--text); 
+            font-family: "Space Grotesk", sans-serif;
         }
         
         .login-card { 
-            background-color: #0d0d0d; 
-            border: 1px solid #1f1f1f;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 50px rgba(59, 130, 246, 0.03);
+            background: linear-gradient(180deg, var(--panel), var(--panel-2));
+            border: 1px solid var(--stroke);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 50px rgba(167, 139, 250, 0.06);
         }
 
         input {
-            background-color: #050505 !important;
-            border: 1px solid #1f1f1f !important;
+            background-color: #12141a !important;
+            border: 1px solid #262b38 !important;
             transition: all 0.2s ease;
         }
 
         input:focus {
-            border-color: #3b82f6 !important;
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important;
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.15) !important;
             outline: none;
         }
 
         .btn-primary {
-            background: linear-gradient(to bottom, #3b82f6, #2563eb);
+            background: linear-gradient(to bottom, #1a1d26, #141821);
+            border: 1px solid #2a2f3d;
             transition: all 0.2s ease;
         }
 
         .btn-primary:hover {
-            filter: brightness(1.1);
+            border-color: var(--accent);
+            color: var(--accent);
             transform: translateY(-1px);
         }
 
@@ -51,7 +64,7 @@
 
     <div class="login-card w-full max-w-md rounded-2xl p-8 md:p-10">
         <div class="text-center mb-10">
-            <h1 class="text-3xl font-bold tracking-tighter text-white">The <span class="text-blue-500">Companion</span></h1>
+            <h1 class="text-3xl font-bold tracking-tighter text-white">The <span class="text-[var(--accent)]">Companion</span></h1>
             <p class="text-gray-500 text-[11px] uppercase tracking-[0.2em] mt-3 font-semibold">Authorized Access Only</p>
         </div>
 

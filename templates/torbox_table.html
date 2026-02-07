@@ -16,7 +16,7 @@
 
             <div class="w-[25%] flex items-center gap-2">
                 <div class="flex-grow bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                    <div class="bg-blue-500 h-full rounded-full" style="width: {{ item.progress }}%"></div>
+                    <div class="progress-blue h-full rounded-full" style="width: {{ item.progress }}%"></div>
                 </div>
                 <span class="text-[10px] font-mono text-gray-400 w-8">{{ item.progress }}%</span>
             </div>
@@ -27,7 +27,7 @@
                     {% if st in ['COMPLETED', 'FINISHED', 'CACHED', 'SEEDING'] %}
                         bg-green-500/10 text-green-500 border-green-500/20
                     {% elif st in ['DOWNLOADING', 'PROCESSING', 'ALLOCATING'] %}
-                        bg-blue-500/10 text-blue-500 border-blue-500/20
+                        status-accent
                     {% elif 'FAILED' in st or 'ERROR' in st or 'ABORTED' in st %}
                         bg-red-500/10 text-red-500 border-red-500/20
                     {% else %}

@@ -6,36 +6,52 @@
     <title>NZB Proxy Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #16181f;
+        --panel-2: #1b1e27;
+        --stroke: #242834;
+        --text: #e5e7eb;
+        --muted: #9aa3b2;
+        --accent: #a78bfa;
+        --accent-2: #7c5cf5;
+      }
       body {
-        background-color: #000000;
-        color: #f3f4f6;
-        font-family: "Inter", sans-serif;
+        background:
+          radial-gradient(900px 500px at 20% -10%, rgba(124, 92, 245, 0.12), transparent 60%),
+          radial-gradient(700px 400px at 80% -20%, rgba(167, 139, 250, 0.1), transparent 60%),
+          var(--bg);
+        color: var(--text);
+        font-family: "Space Grotesk", sans-serif;
       }
       .card {
-        background-color: #0d0d0d;
-        border: 1px solid #1f1f1f;
+        background: linear-gradient(180deg, var(--panel), var(--panel-2));
+        border: 1px solid var(--stroke);
         display: flex;
         flex-direction: column;
         height: 650px;
+        box-shadow:
+          0 18px 45px rgba(0, 0, 0, 0.5),
+          0 2px 0 rgba(255, 255, 255, 0.02) inset;
       }
 
       .toggle-bg {
         width: 2.5rem;
         height: 1.25rem;
-        background-color: #1f1f1f;
+        background-color: #202330;
         border-radius: 9999px;
         transition: all 0.2s;
         position: relative;
-        border: 1px solid #333;
+        border: 1px solid #2a2f3d;
       }
       .toggle-dot {
         width: 0.85rem;
         height: 0.85rem;
-        background-color: #9ca3af;
+        background-color: #8b93a5;
         border-radius: 9999px;
         position: absolute;
         top: 0.125rem;
@@ -43,8 +59,8 @@
         transition: all 0.2s;
       }
       input:checked + .toggle-bg {
-        background-color: #3b82f6;
-        border-color: #2563eb;
+        background-color: var(--accent-2);
+        border-color: var(--accent);
       }
       input:checked + .toggle-bg .toggle-dot {
         transform: translateX(1.25rem);
@@ -62,8 +78,8 @@
         border: 1px solid #065f46;
       }
       .progress-blue {
-        background-color: #3b82f6;
-        box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+        background-color: var(--accent);
+        box-shadow: 0 0 12px rgba(167, 139, 250, 0.35);
         transition: width 0.8s ease;
       }
 
@@ -76,15 +92,15 @@
       }
 
       .view-btn {
-        color: #4b5563;
+        color: #7a8294;
         transition: all 0.2s;
       }
       .view-btn:hover {
-        color: #9ca3af;
+        color: #c2c9d6;
       }
       .view-btn.active {
-        color: #3b82f6;
-        background-color: #1f2937;
+        color: var(--accent);
+        background-color: rgba(167, 139, 250, 0.12);
       }
 
       .truncate {
@@ -92,6 +108,36 @@
       }
       [title] {
         text-decoration: underline dotted #374151;
+      }
+      .accent-chip {
+        background: rgba(167, 139, 250, 0.12);
+        border: 1px solid rgba(167, 139, 250, 0.35);
+        color: var(--accent);
+      }
+      .material-input {
+        background: #12141a;
+        border: 1px solid #262b38;
+      }
+      .material-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.15);
+      }
+      .material-btn {
+        background: linear-gradient(180deg, #1a1d26, #141821);
+        border: 1px solid #2a2f3d;
+      }
+      .material-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .accent-dot {
+        background: var(--accent);
+        box-shadow: 0 0 14px rgba(167, 139, 250, 0.45);
+      }
+      .status-accent {
+        background: rgba(167, 139, 250, 0.12);
+        color: var(--accent);
+        border-color: rgba(167, 139, 250, 0.35);
       }
     </style>
   </head>
@@ -101,14 +147,14 @@
     >
       <div>
         <h1 class="text-2xl font-bold tracking-tight text-white">
-          NZB <span class="text-blue-500">Proxy</span>
+          NZB <span class="text-[var(--accent)]">Proxy</span>
         </h1>
         <div
           class="flex gap-4 mt-2 text-[11px] font-medium text-gray-500 uppercase tracking-wider"
         >
           <span
             >Altmount Einträge:
-            <span class="text-blue-400" id="total-altmount">...</span></span
+            <span class="text-[var(--accent)]" id="total-altmount">...</span></span
           >
           <span
             id="refresh-indicator"
@@ -119,8 +165,15 @@
       </div>
 
       <div class="flex items-center gap-4">
+        <div class="hidden md:flex items-center gap-2">
+          <span class="text-[10px] uppercase tracking-widest text-gray-500">Akzent</span>
+          <label class="flex items-center gap-2 accent-chip rounded-lg px-2 py-1 text-[11px] font-medium">
+            <span class="w-2.5 h-2.5 rounded-full accent-dot"></span>
+            <input id="accent-picker" type="color" class="w-5 h-5 bg-transparent border-0 p-0 cursor-pointer" />
+          </label>
+        </div>
         <div
-          class="hidden md:flex bg-[#0d0d0d] border border-[#1f1f1f] rounded-lg p-1 gap-1"
+          class="hidden md:flex bg-[#151822] border border-[#262b38] rounded-lg p-1 gap-1"
         >
           <button
             onclick="setViewMode('stacked')"
@@ -165,7 +218,7 @@
         </div>
         <a
           href="/logout"
-          class="text-xs bg-gray-900 hover:bg-gray-800 border border-gray-800 px-4 py-2 rounded-lg transition text-gray-300 font-medium"
+          class="text-xs material-btn px-4 py-2 rounded-lg transition text-gray-300 font-medium"
           >Logout</a
         >
       </div>
@@ -187,7 +240,7 @@
               type="text"
               id="search-torbox"
               placeholder="Filter..."
-              class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-48"
+              class="material-input rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none transition-all w-full md:w-48"
               oninput="debounceSearch('t')"
             />
             <svg
@@ -222,7 +275,7 @@
                 type="text"
                 id="search-altmount"
                 placeholder="Suche..."
-                class="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none focus:border-blue-500 transition-all w-full md:w-48"
+                class="material-input rounded-lg px-3 py-1.5 text-[11px] text-gray-300 focus:outline-none transition-all w-full md:w-48"
                 oninput="debounceSearch('h')"
               />
             </div>
@@ -257,6 +310,7 @@
       let currentPageH = 1;
       let isRefreshing = false;
       let searchTimeout;
+      const defaultAccent = "#a78bfa";
 
       function setViewMode(mode) {
         const container = document.getElementById("layout-container");
@@ -278,6 +332,25 @@
 
       const savedMode = localStorage.getItem("dashboardViewMode") || "stacked";
       setViewMode(savedMode);
+
+      function setAccent(color) {
+        const root = document.documentElement;
+        root.style.setProperty("--accent", color);
+        root.style.setProperty("--accent-2", color);
+        localStorage.setItem("dashboardAccent", color);
+      }
+
+      const accentPicker = document.getElementById("accent-picker");
+      const savedAccent = localStorage.getItem("dashboardAccent") || defaultAccent;
+      if (accentPicker) {
+        accentPicker.value = savedAccent;
+        setAccent(savedAccent);
+        accentPicker.addEventListener("input", (e) => {
+          setAccent(e.target.value);
+        });
+      } else {
+        setAccent(savedAccent);
+      }
 
       window.showDetail = function (text) {
         if (!text || text === "undefined") return;
