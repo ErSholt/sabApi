@@ -26,7 +26,7 @@
         font-family: "Manrope", sans-serif;
       }
       .app-shell {
-        background: rgba(14, 14, 14, 0.95);
+        background: linear-gradient(180deg, #141414, #101010);
         border: 1px solid rgba(31, 31, 31, 0.95);
         border-radius: 0;
         box-shadow:
@@ -35,12 +35,12 @@
         overflow: hidden;
       }
       .app-bar {
-        background: linear-gradient(180deg, #1c1c1c, #121212);
-        border-bottom: 1px solid #1f1f1f;
+        background: transparent;
+        border-bottom: none;
       }
       .bottom-bar {
-        background: linear-gradient(180deg, #121212, #0b0b0b);
-        border-top: 1px solid #1f1f1f;
+        background: transparent;
+        border-top: none;
       }
       .card {
         background: linear-gradient(180deg, var(--panel), var(--panel-2));
@@ -52,6 +52,10 @@
         box-shadow:
           0 18px 45px rgba(0, 0, 0, 0.5),
           0 2px 0 rgba(255, 255, 255, 0.015) inset;
+      }
+      .app-divider {
+        height: 1px;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0));
       }
       .panel-header {
         background: transparent;
@@ -162,7 +166,7 @@
   </head>
   <body class="p-4 md:p-8 text-gray-200">
     <div class="max-w-6xl mx-auto app-shell">
-      <div class="app-bar px-6 py-4 flex items-center justify-between gap-4">
+      <div class="app-bar px-6 py-5 flex items-center justify-between gap-4">
         <div class="flex items-center gap-4">
           <button class="icon-btn" title="Menu">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -276,14 +280,13 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="max-w-6xl mx-auto bottom-bar px-6 py-3 mt-6 flex items-center justify-between">
-      <div class="text-[10px] uppercase tracking-widest text-gray-500">System</div>
-      <div class="flex items-center gap-4 text-[11px] text-gray-400">
-        <span>Proxy aktiv</span>
-        <span>TorBox Sync</span>
-        <span>DB OK</span>
+      <div class="bottom-bar px-6 py-4 flex items-center justify-between">
+        <div class="text-[10px] uppercase tracking-widest text-gray-500">System</div>
+        <div class="flex items-center gap-4 text-[11px] text-gray-400">
+          <span>Proxy aktiv</span>
+          <span>TorBox Sync</span>
+          <span>DB OK</span>
+        </div>
       </div>
     </div>
 
