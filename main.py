@@ -290,27 +290,46 @@ async def sabnzbd_api(request: Request):
     print(f"{'='*60}\n")
 
     # Erweitertes Antwort-Format für Sonarr/Radarr Validierung
-    if mode not in ["addfile", "addurl"]:
+    # --- TRANSPARENT PROXY / WEITERLEITUNG AN ALTMOUNT ---
+    if mode not in ["addfile", "addurl"] or request.method == "POST":
         try:
             async with httpx.AsyncClient() as client:
-                # Wir leiten die Anfrage 1:1 an die BACKEND_URL weiter
-                altmount_resp = await client.get(
-                    BACKEND_URL,
-                    params=request.query_params,
-                    timeout=5.0
-                )
+                # Wir leiten den kompletten Request (GET oder POST) an Altmount weiter
+                # Damit auch POST-Daten (Dateien) dort ankommen
+                if request.method == "POST":
+                    # Extrahiere den Body für die Weiterleitung
+                    body = await request.body()
+                    headers = dict(request.headers)
+                    # Host-Header entfernen, da httpx ihn selbst setzt
+                    headers.pop("host", None)
+                    headers.pop("content-length", None)
+                    
+                    altmount_resp = await client.post(
+                        BACKEND_URL,
+                        params=request.query_params,
+                        content=body,
+                        headers=headers,
+                        timeout=10.0
+                    )
+                else:
+                    altmount_resp = await client.get(
+                        BACKEND_URL,
+                        params=request.query_params,
+                        timeout=5.0
+                    )
+
+                # Wenn Altmount erfolgreich antwortet, geben wir deren Antwort zurück
                 if altmount_resp.status_code == 200:
-                    # Wir geben die originale Antwort von Altmount zurück
                     return JSONResponse(content=altmount_resp.json())
         except Exception as e:
-            print(f"[PROXY ERROR] Backend {BACKEND_URL} nicht erreichbar: {e}")
-    
-    
+            print(f"[PROXY ERROR] Weiterleitung zu Altmount ({BACKEND_URL}) fehlgeschlagen: {e}")
+
+    # --- FALLBACK / EIGENE ANTWORT ---
     if mode in ["addfile", "addurl"]:
+        # Wenn die Weiterleitung oben nicht gegriffen hat (oder wir sichergehen wollen)
         return JSONResponse({"status": True, "nzo_ids": ["proxy_added"]})
 
-    # Sonarr/Radarr prüfen beim Test oft 'mode=queue' oder 'mode=fullstatus'
-    # Wir liefern eine Struktur, die ein echtes SABnzbd imitiert
+    # Sonarr/Radarr Fallback (für get_config etc., falls Altmount offline ist)
     return JSONResponse(
         {
             "status": True,
