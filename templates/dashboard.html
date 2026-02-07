@@ -11,23 +11,23 @@
     />
     <style>
       :root {
-        --bg: #121212;
-        --panel: #1c1c1c;
-        --panel-2: #222222;
-        --stroke: #2a2a2a;
+        --bg: #0b0b0b;
+        --panel: #141414;
+        --panel-2: #1a1a1a;
+        --stroke: #1f1f1f;
         --text: #e5e5e5;
         --muted: #9a9a9a;
         --accent: #a78bfa;
         --accent-2: #7c5cf5;
       }
       body {
-        background: linear-gradient(180deg, #1a1a1a 0%, #121212 55%, #0f0f0f 100%);
+        background: linear-gradient(180deg, #171717 0%, #0b0b0b 60%, #080808 100%);
         color: var(--text);
         font-family: "Space Grotesk", sans-serif;
       }
       .app-shell {
-        background: rgba(18, 18, 18, 0.9);
-        border: 1px solid rgba(42, 42, 42, 0.9);
+        background: rgba(14, 14, 14, 0.95);
+        border: 1px solid rgba(31, 31, 31, 0.95);
         border-radius: 0;
         box-shadow:
           0 30px 80px rgba(0, 0, 0, 0.6),
@@ -35,12 +35,12 @@
         overflow: hidden;
       }
       .app-bar {
-        background: linear-gradient(180deg, #1d1d1d, #151515);
-        border-bottom: 1px solid #2a2a2a;
+        background: linear-gradient(180deg, #1c1c1c, #121212);
+        border-bottom: 1px solid #1f1f1f;
       }
       .bottom-bar {
-        background: linear-gradient(180deg, #151515, #101010);
-        border-top: 1px solid #2a2a2a;
+        background: linear-gradient(180deg, #121212, #0b0b0b);
+        border-top: 1px solid #1f1f1f;
       }
       .card {
         background: linear-gradient(180deg, var(--panel), var(--panel-2));
@@ -51,11 +51,11 @@
         border-radius: 0;
         box-shadow:
           0 18px 45px rgba(0, 0, 0, 0.5),
-          0 2px 0 rgba(255, 255, 255, 0.02) inset;
+          0 2px 0 rgba(255, 255, 255, 0.015) inset;
       }
       .panel-header {
-        background: linear-gradient(180deg, #1f1f1f, #171717);
-        border-bottom: 1px solid #2a2a2a;
+        background: transparent;
+        border-bottom: none;
       }
       .panel-title {
         letter-spacing: 0.18em;
@@ -63,24 +63,14 @@
       .panel-subtitle {
         color: #9a9a9a;
       }
-      .section-label {
-        color: #bdbdbd;
-        font-size: 12px;
-        letter-spacing: 0.24em;
-        text-transform: uppercase;
-      }
-      .section-rule {
-        height: 1px;
-        background: linear-gradient(90deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
-      }
       .toggle-bg {
         width: 2.5rem;
         height: 1.25rem;
-        background-color: #222222;
+        background-color: #1b1b1b;
         border-radius: 9999px;
         transition: all 0.2s;
         position: relative;
-        border: 1px solid #2a2a2a;
+        border: 1px solid #1f1f1f;
       }
       .toggle-dot {
         width: 0.85rem;
@@ -122,8 +112,8 @@
         color: var(--accent);
       }
       .material-input {
-        background: #151515;
-        border: 1px solid #2a2a2a;
+        background: #111111;
+        border: 1px solid #1f1f1f;
       }
       .material-input:focus {
         border-color: var(--accent);
@@ -139,7 +129,7 @@
         border-color: rgba(167, 139, 250, 0.35);
       }
       .data-row {
-        background: linear-gradient(180deg, rgba(26, 26, 26, 0.95), rgba(22, 22, 22, 0.95));
+        background: linear-gradient(180deg, rgba(22, 22, 22, 0.98), rgba(18, 18, 18, 0.98));
       }
       .icon-btn {
         width: 36px;
@@ -147,8 +137,8 @@
         border-radius: 0;
         display: grid;
         place-items: center;
-        background: #1b1b1b;
-        border: 1px solid #2a2a2a;
+        background: #151515;
+        border: 1px solid #1f1f1f;
         color: #d0d0d0;
         transition: all 0.2s ease;
       }
@@ -213,12 +203,8 @@
       </div>
 
       <div id="layout-container" class="p-6 grid grid-cols-1 gap-8 transition-all duration-300">
-        <div class="col-span-full">
-          <div class="section-label">Weekly stats</div>
-          <div class="section-rule mt-3"></div>
-        </div>
         <div class="card overflow-hidden">
-          <div class="panel-header px-6 py-4 flex flex-wrap justify-between items-center gap-4">
+          <div class="panel-header px-6 pt-6 pb-4 flex flex-wrap justify-between items-center gap-4">
             <div>
               <div class="text-[10px] font-semibold panel-title text-gray-400 uppercase">Torbox</div>
               <div class="text-[11px] panel-subtitle">Downloads in progress</div>
@@ -242,7 +228,7 @@
         </div>
 
         <div class="card overflow-hidden">
-          <div class="panel-header px-6 py-4 flex flex-wrap justify-between items-center gap-4">
+          <div class="panel-header px-6 pt-6 pb-4 flex flex-wrap justify-between items-center gap-4">
             <div>
               <div class="text-[10px] font-semibold panel-title text-gray-400 uppercase">Altmount</div>
               <div class="text-[11px] panel-subtitle">Recent requests</div>
