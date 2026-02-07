@@ -10,7 +10,7 @@
         <div class="flex items-center gap-3 px-4 md:px-6 overflow-hidden row-clean" 
              style="height: 10%;">
             
-            <div class="flex-1 min-w-0 truncate pr-2 cursor-help" title="{{ item.name }}">
+            <div class="flex-1 min-w-0 truncate pr-2 cursor-pointer" title="{{ item.name }}" onclick="showDetail('{{ item.name|e }}')">
                 <span class="font-medium text-gray-200">{{ item.name }}</span>
             </div>
 
@@ -23,7 +23,7 @@
 
             <div class="flex-shrink-0 w-20 md:w-[20%] flex justify-end">
                 {% set st = item.state|upper %}
-                <span class="truncate px-1.5 py-0.5 text-[9px] whitespace-nowrap font-bold border leading-tight uppercase
+                <span class="truncate px-1.5 py-0.5 text-[9px] whitespace-nowrap font-bold border leading-tight uppercase cursor-pointer
                     {% if st in ['COMPLETED', 'FINISHED', 'CACHED', 'SEEDING'] %}
                         bg-green-500/10 text-green-500 border-green-500/20
                     {% elif st in ['DOWNLOADING', 'PROCESSING', 'ALLOCATING'] %}
@@ -33,7 +33,7 @@
                     {% else %}
                         bg-gray-700/30 text-gray-400 border-gray-700/50
                     {% endif %}"
-                    title="{{ st }}">
+                    title="{{ st }}" onclick="showDetail('{{ st|e }}')">
                     {{ st }}
                 </span>
             </div>

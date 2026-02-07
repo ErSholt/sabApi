@@ -8,7 +8,7 @@
         {% for log in request_log %}
         <div class="flex items-center px-6 overflow-hidden row-clean" 
              style="height: 10%;">
-            <div class="w-[85%] truncate pr-4 cursor-help" title="{{ log.info }}">
+            <div class="w-[85%] truncate pr-4 cursor-pointer" title="{{ log.info }}" onclick="showDetail('{{ log.info|e }}')">
                 <div class="font-medium text-gray-200 truncate">
                     {{ log.display_name }}
                 </div>
@@ -16,14 +16,14 @@
             </div>
             <div class="w-[15%] flex justify-end">
                 {% set s = log.status|string %}
-                <span class="min-w-[35px] text-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-bold border leading-tight
+                <span class="min-w-[35px] text-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-bold border leading-tight cursor-pointer
                     {% if s == '200' %}
                         bg-green-500/10 text-green-500 border-green-500/20
                     {% elif s in ['401', '403', '404', '405'] %}
                         bg-orange-500/10 text-orange-500 border-orange-500/20
                     {% else %}
                         bg-red-500/10 text-red-500 border-red-500/20
-                    {% endif %}">
+                    {% endif %}" onclick="showDetail('{{ s|e }}')">
                     {{ s }}
                 </span>
             </div>
